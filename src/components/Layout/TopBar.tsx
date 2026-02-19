@@ -2,25 +2,55 @@ import { useLocation } from 'react-router-dom'
 import { useTheme } from '../../contexts/ThemeContext'
 
 const titles: Record<string, string> = {
-  '/': 'Dashboard',
-  '/browser': 'Interview Questions Browser',
-  '/tracker': 'Interview Tracker',
-  '/pdf-editor': 'PDF Editor',
-  '/pdf-to-word': 'PDF to Word',
+  '/':                 'Dashboard',
+  '/browser':          'Interview Questions Browser',
+  '/tracker':          'Interview Tracker',
+  '/pdf-editor':       'PDF Editor',
+  '/pdf-to-word':      'PDF to Word',
+  '/md-editor':        'Markdown Editor',
+  '/json':             'JSON Formatter',
+  '/diff':             'Diff Viewer',
+  '/encoder':          'Base64 / URL Encoder',
+  '/regex':            'Regex Tester',
+  '/pomodoro':         'Pomodoro Timer',
+  '/notes':            'Notes',
+  '/todo':             'Todo List',
+  '/image-compressor': 'Image Compressor',
+  '/csv':              'CSV Viewer',
+  '/qr':               'QR Code Generator',
+  '/colors':           'Color Palette',
+  '/base64-image':     'Base64 to Image',
 }
 
-export default function TopBar() {
+interface TopBarProps {
+  onMenuClick: () => void
+}
+
+export default function TopBar({ onMenuClick }: TopBarProps) {
   const { pathname } = useLocation()
   const title = titles[pathname] ?? 'Toolzy'
   const { isDark, toggle } = useTheme()
 
   return (
-    <header className="h-14 bg-surface border-b border-line flex items-center px-6 shrink-0 justify-between">
-      <h1 className="text-base font-semibold text-fg1">{title}</h1>
+    <header className="h-14 bg-surface border-b border-line flex items-center px-4 shrink-0 gap-3">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg text-fg2 hover:bg-raised hover:text-fg1 transition-colors shrink-0"
+        aria-label="Open menu"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      <h1 className="text-base font-semibold text-fg1 flex-1 truncate">{title}</h1>
+
+      {/* Theme toggle */}
       <button
         onClick={toggle}
         title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-        className="w-8 h-8 flex items-center justify-center rounded-lg text-fg2 hover:bg-raised hover:text-fg1 transition-colors"
+        className="w-8 h-8 flex items-center justify-center rounded-lg text-fg2 hover:bg-raised hover:text-fg1 transition-colors shrink-0"
       >
         {isDark ? (
           /* Sun icon */
