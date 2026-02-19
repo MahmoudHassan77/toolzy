@@ -1,0 +1,120 @@
+export type ToolType =
+  | 'select'
+  | 'eraser'
+  | 'highlight'
+  | 'whiteout'
+  | 'text'
+  | 'stamp'
+  | 'draw'
+  | 'rect'
+  | 'ellipse'
+  | 'line'
+  | 'arrow'
+  | 'signature'
+
+export type ShapeKind = 'rect' | 'ellipse' | 'line' | 'arrow'
+export type StampSymbol = '✓' | '✗' | '●' | string // date string also valid
+
+export interface HighlightAnnotation {
+  id: string
+  type: 'highlight'
+  pageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+  color: string
+}
+
+export interface TextAnnotation {
+  id: string
+  type: 'text'
+  pageIndex: number
+  x: number
+  y: number
+  text: string
+  fontSize: number
+  color: string
+}
+
+export interface SignatureAnnotation {
+  id: string
+  type: 'signature'
+  pageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+  dataUrl: string
+}
+
+export interface DrawAnnotation {
+  id: string
+  type: 'draw'
+  pageIndex: number
+  // Absolute SVG path string (coordinates relative to page top-left)
+  svgPath: string
+  color: string
+  strokeWidth: number
+  // Bounding box for hit-testing / selection
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface ShapeAnnotation {
+  id: string
+  type: 'shape'
+  pageIndex: number
+  shape: ShapeKind
+  x: number
+  y: number
+  width: number
+  height: number
+  color: string
+  strokeWidth: number
+}
+
+export interface WhiteoutAnnotation {
+  id: string
+  type: 'whiteout'
+  pageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface StampAnnotation {
+  id: string
+  type: 'stamp'
+  pageIndex: number
+  x: number
+  y: number
+  text: string
+  color: string
+  fontSize: number
+}
+
+export type Annotation =
+  | HighlightAnnotation
+  | TextAnnotation
+  | SignatureAnnotation
+  | DrawAnnotation
+  | ShapeAnnotation
+  | WhiteoutAnnotation
+  | StampAnnotation
+
+export interface PageDimensions {
+  width: number
+  height: number
+  scale: number
+}
+
+export interface ToolOptions {
+  color: string
+  strokeWidth: number
+  fontSize: number
+  stampSymbol: string
+}

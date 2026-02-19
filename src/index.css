@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light theme (default) ─────────────────────────────────────────────────── */
+:root {
+  --bg:      #fafafa;   /* page background      */
+  --surface: #ffffff;   /* cards, sidebar, nav  */
+  --raised:  #f4f4f5;   /* toolbar row-2, hover */
+  --line:    #e4e4e7;   /* standard border      */
+  --line2:   #d4d4d8;   /* inputs, strong dividers */
+  --fg1:     #18181b;   /* primary text         */
+  --fg2:     #52525b;   /* secondary text       */
+  --fg3:     #a1a1aa;   /* muted / placeholder  */
+  --acc:     #f59e0b;   /* amber-500 accent     */
+  --acch:    #d97706;   /* amber-600 hover      */
+  --accon:   #1c1917;   /* text ON amber button */
+}
+
+/* ── Dark theme ─────────────────────────────────────────────────────────────── */
+.dark {
+  --bg:      #09090b;   /* zinc-950             */
+  --surface: #18181b;   /* zinc-900             */
+  --raised:  #27272a;   /* zinc-800             */
+  --line:    #3f3f46;   /* zinc-700             */
+  --line2:   #52525b;   /* zinc-600             */
+  --fg1:     #f4f4f5;   /* zinc-100             */
+  --fg2:     #a1a1aa;   /* zinc-400             */
+  --fg3:     #71717a;   /* zinc-500             */
+  --acc:     #fbbf24;   /* amber-400            */
+  --acch:    #f59e0b;   /* amber-500            */
+  --accon:   #1c1917;   /* stays dark on yellow */
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-fg1 antialiased;
+  }
+}
