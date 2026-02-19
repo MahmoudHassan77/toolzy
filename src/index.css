@@ -35,5 +35,31 @@
 @layer base {
   body {
     @apply bg-bg text-fg1 antialiased;
+    font-family: 'Comic Neue', cursive;
   }
+}
+
+/* ── Custom scrollbar ────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line2);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg3);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line2) transparent;
 }

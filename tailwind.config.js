@@ -7,6 +7,9 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"Comic Neue"', 'cursive'],
+      },
       colors: {
         // Semantic tokens — values come from CSS vars (see index.css)
         bg:      'var(--bg)',      // page/outermost background
