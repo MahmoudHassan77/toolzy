@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { GraphData, GraphNode, GraphEdge, Status } from './types'
 import { extractRelativeImports, resolveImport, findFile } from './parseImports'
 import { parseGithubUrl, fetchGithubFiles } from './githubApi'
-import { runForceLayout } from './forceLayout'
+import { runSwimlaneLayout } from './swimlaneLayout'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyHandle = any
@@ -108,8 +108,8 @@ export function useProjectMapper() {
     if (files.length === 0) throw new Error('No source files found.')
     setProgress(`Building dependency graph from ${files.length} files…`)
     const graph = buildGraph(files)
-    setProgress('Running force layout…')
-    const laid = runForceLayout(graph.nodes, graph.edges, 1400, 900)
+    setProgress('Computing swimlane layout…')
+    const laid = runSwimlaneLayout(graph.nodes, graph.edges)
     setGraphData({ ...graph, nodes: laid })
     setStatus('done')
   }
