@@ -205,7 +205,7 @@ export default function JwtDecoder() {
           </div>
         )}
 
-        {valid && header && payload && (
+        {valid && !!header && !!payload && (
           <div className="max-w-3xl mx-auto flex flex-col gap-6">
 
             {/* Token parts visual */}
