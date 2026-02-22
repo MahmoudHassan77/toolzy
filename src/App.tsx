@@ -18,6 +18,8 @@ import ImageCompressor from './pages/ImageCompressor'
 import CsvViewer from './pages/CsvViewer'
 import Notes from './pages/Notes'
 import TodoList from './pages/TodoList'
+import ProjectMapper from './pages/ProjectMapper'
+import DiagramEditor from './pages/DiagramEditor'
 import ErrorBoundary from './components/ErrorBoundary'
 
 export default function App() {
@@ -44,6 +46,10 @@ export default function App() {
           <Route path="pomodoro"  element={<ErrorBoundary><Pomodoro /></ErrorBoundary>} />
           <Route path="notes"     element={<ErrorBoundary><Notes /></ErrorBoundary>} />
           <Route path="todo"      element={<ErrorBoundary><TodoList /></ErrorBoundary>} />
+
+          {/* Developer Tools */}
+          <Route path="project-mapper" element={<ErrorBoundary><ProjectMapper /></ErrorBoundary>} />
+          <Route path="diagram"        element={<ErrorBoundary><DiagramEditor /></ErrorBoundary>} />
 
           {/* Media & Visual */}
           <Route path="image-compressor" element={<ErrorBoundary><ImageCompressor /></ErrorBoundary>} />

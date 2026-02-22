@@ -118,6 +118,7 @@ export default function InterviewTracker() {
       )}
 
       <ApplicationForm
+        key={editTarget?.id ?? 'new'}
         open={formOpen}
         onClose={() => { setFormOpen(false); setEditTarget(null) }}
         onSave={handleSave}

@@ -20,6 +20,8 @@ const titles: Record<string, string> = {
   '/qr':               'QR Code Generator',
   '/colors':           'Color Palette',
   '/base64-image':     'Base64 to Image',
+  '/diagram':          'Diagram Editor',
+  '/project-mapper':   'Project File Map',
 }
 
 interface TopBarProps {

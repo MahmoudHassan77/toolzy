@@ -162,6 +162,35 @@ const sections: Section[] = [
     ],
   },
   {
+    heading: 'Developer Tools',
+    tools: [
+      {
+        to: '/diagram',
+        title: 'Diagram Editor',
+        description: 'Draw UML diagrams and flowcharts with shapes, arrows, and free-hand pen. Touch-screen and stylus pressure-sensitive.',
+        color: 'from-violet-500 to-purple-600',
+        icon: (
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" />
+          </svg>
+        ),
+      },
+      {
+        to: '/project-mapper',
+        title: 'Project File Map',
+        description: 'Paste a GitHub URL or pick a local folder to visualize import/require relationships as an interactive dependency graph.',
+        color: 'from-indigo-500 to-violet-600',
+        icon: (
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4zM9 10h6M12 7v6" />
+          </svg>
+        ),
+      },
+    ],
+  },
+  {
     heading: 'Media & Visual',
     tools: [
       {
@@ -229,7 +258,7 @@ export default function Home() {
     <div className="p-6 max-w-7xl mx-auto overflow-y-auto">
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-fg1">Welcome to Toolzy</h2>
-        <p className="mt-1 text-fg2 text-sm">Your all-in-one productivity dashboard — 17 tools, all client-side.</p>
+        <p className="mt-1 text-fg2 text-sm">Your all-in-one productivity dashboard — 19 tools, all client-side.</p>
       </div>
 
       <div className="flex flex-col gap-8">
