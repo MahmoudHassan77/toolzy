@@ -1,5 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const API_BASE = ((import.meta as any).env?.VITE_API_URL as string) || 'http://localhost:3001'
+const API_BASE = ((import.meta as any).env?.VITE_API_URL as string) || 'https://server-psi-plum-55.vercel.app'
+// Local dev: set VITE_API_URL=http://localhost:3001 in .env
 
 async function apiFetch(path: string, options?: RequestInit) {
   const token = localStorage.getItem('myservices_token')
