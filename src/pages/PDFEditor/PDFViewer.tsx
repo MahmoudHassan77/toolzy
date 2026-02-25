@@ -17,6 +17,11 @@ interface PDFViewerProps {
   onAddShape: (pi: number, shape: 'rect' | 'ellipse' | 'line' | 'arrow', x: number, y: number, w: number, h: number) => void
   onAddWhiteout: (pi: number, x: number, y: number, w: number, h: number) => void
   onAddStamp: (pi: number, x: number, y: number) => void
+  onAddStickyNote: (pi: number, x: number, y: number) => void
+  onAddUnderline: (pi: number, x: number, y: number, w: number, h: number) => void
+  onAddStrikethrough: (pi: number, x: number, y: number, w: number, h: number) => void
+  onAddPolygon: (pi: number, points: { x: number; y: number }[]) => void
+  onAddCallout: (pi: number, x: number, y: number, w: number, h: number, tailX: number, tailY: number) => void
   onUpdateAnnotation: (id: string, updates: Partial<Annotation>) => void
   onRemoveAnnotation: (id: string) => void
   onRequestSignature: (cb: (dataUrl: string) => void) => void
@@ -34,6 +39,8 @@ function PageCanvas({
   annotations, activeTool, toolOptions,
   onAddHighlight, onAddText, onAddSignature,
   onAddDraw, onAddShape, onAddWhiteout, onAddStamp,
+  onAddStickyNote, onAddUnderline, onAddStrikethrough,
+  onAddPolygon, onAddCallout,
   onUpdateAnnotation, onRemoveAnnotation,
   onRequestSignature, onPageDims, onDragStart,
 }: PageCanvasProps) {
@@ -101,6 +108,11 @@ function PageCanvas({
           onAddShape={onAddShape}
           onAddWhiteout={onAddWhiteout}
           onAddStamp={onAddStamp}
+          onAddStickyNote={onAddStickyNote}
+          onAddUnderline={onAddUnderline}
+          onAddStrikethrough={onAddStrikethrough}
+          onAddPolygon={onAddPolygon}
+          onAddCallout={onAddCallout}
           onUpdateAnnotation={onUpdateAnnotation}
           onRemoveAnnotation={onRemoveAnnotation}
           onDragStart={onDragStart}

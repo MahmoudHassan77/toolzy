@@ -1,6 +1,6 @@
 import { useReducer, useState, useCallback, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
-import { Annotation, ToolType, PageDimensions, ToolOptions } from '../../types/pdf'
+import { Annotation, ToolType, PageDimensions, ToolOptions, PageOp } from '../../types/pdf'
 import { generateId } from '../../utils/ids'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
@@ -98,6 +98,7 @@ const DEFAULT_OPTIONS: ToolOptions = {
   strokeWidth: 2,
   fontSize: 16,
   stampSymbol: '✓',
+  opacity: 1,
 }
 
 // ── hook ──────────────────────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ export function usePDFEditor() {
   const [error, setError] = useState<string | null>(null)
   const originalBytesRef = useRef<ArrayBuffer | null>(null)
   const pageDimsRef = useRef<PageDimensions[]>([])
+  const [pageOperations, setPageOperations] = useState<PageOp[]>([])
 
   const { annotations, past, future } = history
   const canUndo = past.length > 0
@@ -141,6 +143,7 @@ export function usePDFEditor() {
       setCurrentPage(1)
       dispatch({ type: 'RESET' })
       pageDimsRef.current = []
+      setPageOperations([])
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load PDF')
     } finally {
@@ -152,9 +155,9 @@ export function usePDFEditor() {
 
   const addHighlight = useCallback(
     (pageIndex: number, x: number, y: number, width: number, height: number, color?: string) => {
-      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'highlight', pageIndex, x, y, width, height, color: color ?? toolOptions.color } })
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'highlight', pageIndex, x, y, width, height, color: color ?? toolOptions.color, markupStyle: 'highlight' as const, opacity: toolOptions.opacity } })
     },
-    [toolOptions.color]
+    [toolOptions.color, toolOptions.opacity]
   )
 
   const addText = useCallback(
@@ -174,16 +177,16 @@ export function usePDFEditor() {
 
   const addDraw = useCallback(
     (pageIndex: number, svgPath: string, bbox: { x: number; y: number; width: number; height: number }) => {
-      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'draw', pageIndex, svgPath, color: toolOptions.color, strokeWidth: toolOptions.strokeWidth, ...bbox } })
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'draw', pageIndex, svgPath, color: toolOptions.color, strokeWidth: toolOptions.strokeWidth, opacity: toolOptions.opacity, ...bbox } })
     },
-    [toolOptions.color, toolOptions.strokeWidth]
+    [toolOptions.color, toolOptions.strokeWidth, toolOptions.opacity]
   )
 
   const addShape = useCallback(
     (pageIndex: number, shape: 'rect' | 'ellipse' | 'line' | 'arrow', x: number, y: number, width: number, height: number) => {
-      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'shape', pageIndex, shape, x, y, width, height, color: toolOptions.color, strokeWidth: toolOptions.strokeWidth } })
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'shape', pageIndex, shape, x, y, width, height, color: toolOptions.color, strokeWidth: toolOptions.strokeWidth, opacity: toolOptions.opacity } })
     },
-    [toolOptions.color, toolOptions.strokeWidth]
+    [toolOptions.color, toolOptions.strokeWidth, toolOptions.opacity]
   )
 
   const addWhiteout = useCallback(
@@ -203,6 +206,64 @@ export function usePDFEditor() {
     [toolOptions]
   )
 
+  const addStickyNote = useCallback(
+    (pageIndex: number, x: number, y: number) => {
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'stickynote', pageIndex, x, y, text: '', color: toolOptions.color, expanded: true, opacity: toolOptions.opacity } })
+    },
+    [toolOptions.color, toolOptions.opacity]
+  )
+
+  const addUnderline = useCallback(
+    (pageIndex: number, x: number, y: number, width: number, height: number) => {
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'highlight', pageIndex, x, y, width, height, color: toolOptions.color, markupStyle: 'underline' as const, opacity: toolOptions.opacity } })
+    },
+    [toolOptions.color, toolOptions.opacity]
+  )
+
+  const addStrikethrough = useCallback(
+    (pageIndex: number, x: number, y: number, width: number, height: number) => {
+      dispatch({ type: 'ADD', ann: { id: generateId(), type: 'highlight', pageIndex, x, y, width, height, color: toolOptions.color, markupStyle: 'strikethrough' as const, opacity: toolOptions.opacity } })
+    },
+    [toolOptions.color, toolOptions.opacity]
+  )
+
+  const addPolygon = useCallback(
+    (pageIndex: number, points: { x: number; y: number }[]) => {
+      if (points.length < 3) return
+      const xs = points.map((p) => p.x)
+      const ys = points.map((p) => p.y)
+      const minX = Math.min(...xs)
+      const minY = Math.min(...ys)
+      const maxX = Math.max(...xs)
+      const maxY = Math.max(...ys)
+      dispatch({
+        type: 'ADD',
+        ann: {
+          id: generateId(), type: 'polygon', pageIndex, points,
+          color: toolOptions.color, strokeWidth: toolOptions.strokeWidth,
+          opacity: toolOptions.opacity,
+          x: minX, y: minY, width: maxX - minX, height: maxY - minY,
+        },
+      })
+    },
+    [toolOptions.color, toolOptions.strokeWidth, toolOptions.opacity]
+  )
+
+  const addCallout = useCallback(
+    (pageIndex: number, x: number, y: number, width: number, height: number, tailX: number, tailY: number) => {
+      dispatch({
+        type: 'ADD',
+        ann: {
+          id: generateId(), type: 'callout', pageIndex,
+          x, y, width, height, tailX, tailY,
+          text: '', color: toolOptions.color,
+          fontSize: toolOptions.fontSize, opacity: toolOptions.opacity,
+        },
+      })
+    },
+    [toolOptions.color, toolOptions.fontSize, toolOptions.opacity]
+  )
+
   const updateAnnotation = useCallback((id: string, updates: Partial<Annotation>) => {
     dispatch({ type: 'UPDATE', id, updates })
   }, [])
@@ -215,6 +276,50 @@ export function usePDFEditor() {
   const startDragHistory = useCallback(() => {
     dispatch({ type: 'DRAG_START' })
   }, [])
+
+  // ── page management ────────────────────────────────────────────────────────
+
+  const rotatePage = useCallback((pageIndex: number, degrees: number) => {
+    setPageOperations((prev) => [...prev, { type: 'rotate', pageIndex, degrees }])
+  }, [])
+
+  const deletePage = useCallback((pageIndex: number) => {
+    setPageOperations((prev) => [...prev, { type: 'delete', pageIndex }])
+    // Remove annotations on the deleted page and adjust indices for subsequent pages
+    const annsOnPage = annotations.filter((a) => a.pageIndex === pageIndex)
+    for (const a of annsOnPage) {
+      dispatch({ type: 'REMOVE', id: a.id })
+    }
+    // Decrement pageIndex for annotations on pages after the deleted one
+    for (const a of annotations) {
+      if (a.pageIndex > pageIndex) {
+        dispatch({ type: 'UPDATE', id: a.id, updates: { pageIndex: a.pageIndex - 1 } as Partial<Annotation> })
+      }
+    }
+    // Adjust numPages
+    setNumPages((n) => Math.max(1, n - 1))
+    // Adjust current page if needed
+    setCurrentPage((cp) => cp > numPages - 1 ? Math.max(1, numPages - 1) : cp)
+  }, [annotations, numPages])
+
+  const movePage = useCallback((from: number, to: number) => {
+    if (from === to) return
+    setPageOperations((prev) => [...prev, { type: 'move', from, to }])
+    // Remap annotation page indices
+    for (const a of annotations) {
+      let pi = a.pageIndex
+      if (pi === from) {
+        pi = to
+      } else if (from < to && pi > from && pi <= to) {
+        pi = pi - 1
+      } else if (from > to && pi >= to && pi < from) {
+        pi = pi + 1
+      }
+      if (pi !== a.pageIndex) {
+        dispatch({ type: 'UPDATE', id: a.id, updates: { pageIndex: pi } as Partial<Annotation> })
+      }
+    }
+  }, [annotations])
 
   // ── undo / redo ─────────────────────────────────────────────────────────────
 
@@ -236,6 +341,7 @@ export function usePDFEditor() {
     dispatch({ type: 'RESET' })
     originalBytesRef.current = null
     pageDimsRef.current = []
+    setPageOperations([])
   }, [])
 
   return {
@@ -249,10 +355,11 @@ export function usePDFEditor() {
     toolOptions, setToolOptions,
     loading, error,
     loadPDF,
-    addHighlight, addText, addSignature, addDraw, addShape, addWhiteout, addStamp,
+    addHighlight, addText, addSignature, addDraw, addShape, addWhiteout, addStamp, addStickyNote, addUnderline, addStrikethrough, addPolygon, addCallout,
     updateAnnotation, removeAnnotation, startDragHistory,
     setPageDims,
     originalBytesRef, pageDimsRef,
     reset,
+    pageOperations, rotatePage, deletePage, movePage,
   }
 }

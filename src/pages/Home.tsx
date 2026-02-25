@@ -18,7 +18,7 @@ const sections: Section[] = [
     heading: 'Documents & PDF',
     tools: [
       {
-        to: '/browser',
+        to: '/dashboard/browser',
         title: 'Interview Browser',
         description: 'Browse local markdown files with a folder tree. Navigate your interview prep notes.',
         color: 'from-amber-500 to-yellow-600',
@@ -29,7 +29,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/tracker',
+        to: '/dashboard/tracker',
         title: 'Interview Tracker',
         description: 'Track job applications and interview rounds. Export to Excel and import back.',
         color: 'from-emerald-500 to-teal-600',
@@ -40,7 +40,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/pdf-editor',
+        to: '/dashboard/pdf-editor',
         title: 'PDF Editor',
         description: 'Annotate PDFs with highlights, text overlays, and signatures. Embed and download.',
         color: 'from-orange-500 to-red-600',
@@ -51,7 +51,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/pdf-to-word',
+        to: '/dashboard/pdf-to-word',
         title: 'PDF to Word',
         description: 'Extract text from PDFs and convert to a downloadable .docx with heading detection.',
         color: 'from-sky-500 to-blue-600',
@@ -67,7 +67,7 @@ const sections: Section[] = [
     heading: 'Text & Code',
     tools: [
       {
-        to: '/md-editor',
+        to: '/dashboard/md-editor',
         title: 'Markdown Editor',
         description: 'Side-by-side Markdown editor with live preview and HTML export.',
         color: 'from-violet-500 to-purple-600',
@@ -78,7 +78,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/json',
+        to: '/dashboard/json',
         title: 'JSON Formatter',
         description: 'Format or minify JSON with syntax validation and one-click copy.',
         color: 'from-lime-500 to-green-600',
@@ -89,7 +89,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/diff',
+        to: '/dashboard/diff',
         title: 'Diff Viewer',
         description: 'Compare two text blocks and see color-coded added/removed lines.',
         color: 'from-rose-500 to-pink-600',
@@ -100,7 +100,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/encoder',
+        to: '/dashboard/encoder',
         title: 'Base64 / URL Encoder',
         description: 'Encode and decode Base64 strings and URL components instantly.',
         color: 'from-cyan-500 to-sky-600',
@@ -111,7 +111,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/regex',
+        to: '/dashboard/regex',
         title: 'Regex Tester',
         description: 'Test regular expressions with live match highlighting and match list.',
         color: 'from-fuchsia-500 to-violet-600',
@@ -127,7 +127,7 @@ const sections: Section[] = [
     heading: 'Productivity',
     tools: [
       {
-        to: '/pomodoro',
+        to: '/dashboard/pomodoro',
         title: 'Pomodoro Timer',
         description: '25/5 minute focus timer with session log and browser tab countdown.',
         color: 'from-red-500 to-rose-600',
@@ -138,7 +138,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/notes',
+        to: '/dashboard/notes',
         title: 'Notes',
         description: 'Multi-tab notepad with inline title editing and word count. Persists locally.',
         color: 'from-yellow-500 to-amber-600',
@@ -149,7 +149,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/todo',
+        to: '/dashboard/todo',
         title: 'Todo List',
         description: 'Task manager with priorities, due dates, and All/Active/Done filters.',
         color: 'from-teal-500 to-emerald-600',
@@ -159,13 +159,25 @@ const sections: Section[] = [
           </svg>
         ),
       },
+      {
+        to: '/dashboard/storyboard',
+        title: 'Story Board',
+        description: 'Kanban board with drag-and-drop cards, priorities, tags, due dates, and multiple boards. Persists locally.',
+        color: 'from-violet-500 to-indigo-600',
+        icon: (
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+        ),
+      },
     ],
   },
   {
     heading: 'Developer Tools',
     tools: [
       {
-        to: '/diagram',
+        to: '/dashboard/diagram',
         title: 'Diagram Editor',
         description: 'Draw UML diagrams and flowcharts with shapes, arrows, and free-hand pen. Touch-screen and stylus pressure-sensitive.',
         color: 'from-violet-500 to-purple-600',
@@ -177,7 +189,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/project-mapper',
+        to: '/dashboard/project-mapper',
         title: 'Project File Map',
         description: 'Paste a GitHub URL or pick a local folder to visualize import/require relationships as an interactive dependency graph.',
         color: 'from-indigo-500 to-violet-600',
@@ -194,7 +206,7 @@ const sections: Section[] = [
     heading: 'Media & Visual',
     tools: [
       {
-        to: '/image-compressor',
+        to: '/dashboard/image-compressor',
         title: 'Image Compressor',
         description: 'Drop an image, adjust quality, and download a compressed JPEG with size savings.',
         color: 'from-indigo-500 to-blue-600',
@@ -205,7 +217,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/csv',
+        to: '/dashboard/csv',
         title: 'CSV Viewer',
         description: 'Open CSV, TSV, or Excel files as a sortable, filterable table.',
         color: 'from-green-500 to-lime-600',
@@ -216,7 +228,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/qr',
+        to: '/dashboard/qr',
         title: 'QR Code',
         description: 'Generate QR codes from any text or URL and download as PNG.',
         color: 'from-slate-500 to-gray-600',
@@ -227,7 +239,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/colors',
+        to: '/dashboard/colors',
         title: 'Color Palette',
         description: 'Pick colors and get HEX, RGB, HSL values. Save a reusable palette locally.',
         color: 'from-pink-500 to-fuchsia-600',
@@ -238,7 +250,7 @@ const sections: Section[] = [
         ),
       },
       {
-        to: '/base64-image',
+        to: '/dashboard/base64-image',
         title: 'Base64 to Image',
         description: 'Paste a base64 string to preview and download the decoded image.',
         color: 'from-orange-400 to-amber-500',

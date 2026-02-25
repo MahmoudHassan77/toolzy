@@ -1,7 +1,12 @@
 import { useState } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import { useDropzone } from 'react-dropzone'
-import { RichParagraph, RichSpan, buildAndDownloadDocx } from './docxBuilder'
+import {
+  RichParagraph, RichSpan, ContentBlock,
+  buildAndDownloadDocx, mapFont,
+} from './docxBuilder'
+import { detectTables } from './tableDetector'
+import { extractImages } from './imageExtractor'
 import PreviewPane from './PreviewPane'
 import Button from '../../components/ui/Button'
 import Spinner from '../../components/ui/Spinner'
@@ -19,6 +24,10 @@ interface TextItemEx {
   fontName: string
   bold: boolean
   italic: boolean
+  /** Hex color like "#ff0000" */
+  color?: string
+  /** Mapped font family name */
+  fontFamily?: string
 }
 
 interface RawLine {
@@ -80,19 +89,24 @@ function buildSpans(items: TextItemEx[]): RichSpan[] {
 
     if (!text) continue
 
+    const color = item.color
+    const fontFamily = item.fontFamily
+
     // Merge with last span when style matches (avoids many 1-char runs)
     if (spans.length > 0) {
       const last = spans[spans.length - 1]
       const sameBold = last.bold === item.bold
       const sameItalic = last.italic === item.italic
       const sameSize = Math.abs(last.fontSize - fontSize) < 2
-      if (sameBold && sameItalic && sameSize) {
+      const sameColor = (last.color ?? '') === (color ?? '')
+      const sameFont = (last.fontFamily ?? '') === (fontFamily ?? '')
+      if (sameBold && sameItalic && sameSize && sameColor && sameFont) {
         last.text += text
         continue
       }
     }
 
-    spans.push({ text, bold: item.bold, italic: item.italic, fontSize })
+    spans.push({ text, bold: item.bold, italic: item.italic, fontSize, color, fontFamily })
   }
 
   return spans
@@ -117,13 +131,122 @@ function detectAlign(
   return 'left'
 }
 
+// ── build paragraphs from text items (non-table items) ──────────────────────
+
+interface ParagraphWithY {
+  paragraph: RichParagraph
+  y: number
+}
+
+function buildParagraphsFromItems(
+  items: TextItemEx[],
+  pageWidth: number,
+  bodyFontSize: number,
+  medianLeftX: number,
+  isNewPage: boolean,
+  isFirstPage: boolean,
+): ParagraphWithY[] {
+  if (items.length === 0) return []
+
+  // Adaptive tolerance based on median height
+  const heights = items.map((i) => i.height).filter((h) => h > 1).sort((a, b) => a - b)
+  const medH = heights[Math.floor(heights.length / 2)] || 10
+  const tolerance = medH * 0.45
+
+  // Group into lines, sort top to bottom
+  const lines = groupIntoLines(items, tolerance)
+  lines.sort((a, b) => b.y - a.y)
+
+  // Sort items left to right within each line
+  for (const line of lines) {
+    line.items.sort((a, b) => a.x - b.x)
+  }
+
+  const results: ParagraphWithY[] = []
+  let firstParaOnPage = isNewPage && !isFirstPage
+
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li]
+    const spans = buildSpans(line.items)
+    if (spans.length === 0 || spans.every((s) => !s.text.trim())) continue
+
+    // Space-before: vertical gap significantly larger than normal line spacing
+    let spaceBefore = false
+    if (li > 0) {
+      const prev = lines[li - 1]
+      const gap = prev.y - line.y
+      const normalSpacing = prev.maxHeight * 1.4
+      spaceBefore = gap > normalSpacing * 1.7
+    }
+
+    // Heading detection
+    const lineMaxH = line.maxHeight
+    const relSize = lineMaxH / (bodyFontSize || 12)
+    const allBold = line.items.every((i) => i.bold)
+    const isHeading = relSize >= 1.25 || (allBold && relSize >= 1.1)
+
+    let headingLevel: 1 | 2 | 3 = 2
+    if (relSize >= 1.8) headingLevel = 1
+    else if (relSize >= 1.35) headingLevel = 2
+    else headingLevel = 3
+
+    const align = detectAlign(line, pageWidth)
+
+    let pageBreakBefore = false
+    if (firstParaOnPage) {
+      pageBreakBefore = true
+      firstParaOnPage = false
+    }
+
+    // List detection
+    let listType: 'bullet' | 'numbered' | undefined
+    let listLevel = 0
+
+    if (spans.length > 0) {
+      const firstText = spans[0].text.trimStart()
+      const bulletMatch = firstText.match(/^([•●○■▪\-*–—])\s+/)
+      const numberedMatch = firstText.match(/^(?:(\d+|[a-z]+|[ivxlcdm]+)[.)]\s+|\((\d+|[a-z]+)\)\s+)/i)
+
+      if (bulletMatch) {
+        listType = 'bullet'
+        spans[0].text = spans[0].text.trimStart().slice(bulletMatch[0].length)
+        if (!spans[0].text && spans.length > 1) spans.shift()
+      } else if (numberedMatch) {
+        listType = 'numbered'
+        spans[0].text = spans[0].text.trimStart().slice(numberedMatch[0].length)
+        if (!spans[0].text && spans.length > 1) spans.shift()
+      }
+
+      if (listType && medianLeftX > 0) {
+        const lineLeftX = Math.min(...line.items.map((it) => it.x))
+        const indentRatio = (lineLeftX - medianLeftX) / medianLeftX
+        if (indentRatio > 0.15) listLevel = 1
+        if (indentRatio > 0.30) listLevel = 2
+        if (indentRatio > 0.45) listLevel = 3
+      }
+    }
+
+    results.push({
+      y: line.y,
+      paragraph: {
+        spans, isHeading, headingLevel, spaceBefore, align,
+        pageBreakBefore,
+        listType,
+        listLevel: listType ? listLevel : undefined,
+      },
+    })
+  }
+
+  return results
+}
+
 // ── main extraction ───────────────────────────────────────────────────────────
 
-async function extractParagraphs(file: File): Promise<RichParagraph[]> {
+async function extractContent(file: File): Promise<ContentBlock[]> {
   const ab = await file.arrayBuffer()
   const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise
 
-  const allParagraphs: RichParagraph[] = []
+  const allBlocks: ContentBlock[] = []
 
   for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
     const page = await pdfDoc.getPage(pageNum)
@@ -134,42 +257,57 @@ async function extractParagraphs(file: File): Promise<RichParagraph[]> {
     // ── 1. collect items ──────────────────────────────────────────────────
     const items: TextItemEx[] = []
     for (const raw of content.items) {
-      if (!('str' in raw)) continue       // skip TextMarkedContent
-      if (!raw.str) continue              // skip truly empty strings
-      // height from the item; fall back to the scale component of the matrix
+      if (!('str' in raw)) continue
+      if (!raw.str) continue
       const h = Math.abs((raw as { height?: number }).height ?? 0)
         || Math.abs(raw.transform[3])
         || Math.abs(raw.transform[0])
+      const fontName = (raw as { fontName?: string }).fontName ?? ''
+
+      let color: string | undefined
+      const rawColor = (raw as { color?: string | number[] }).color
+      if (typeof rawColor === 'string' && rawColor.startsWith('#')) {
+        color = rawColor
+      } else if (Array.isArray(rawColor) && rawColor.length >= 3) {
+        const [r, g, b] = rawColor.map(c => c <= 1 ? Math.round(c * 255) : Math.round(c))
+        if (r !== 0 || g !== 0 || b !== 0) {
+          color = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+        }
+      }
+
+      const fontFamily = fontName ? mapFont(fontName) : undefined
+
       items.push({
         str: raw.str,
         x: raw.transform[4],
         y: raw.transform[5],
         width: (raw as { width?: number }).width ?? 0,
         height: h,
-        fontName: (raw as { fontName?: string }).fontName ?? '',
-        bold: isBold((raw as { fontName?: string }).fontName ?? ''),
-        italic: isItalic((raw as { fontName?: string }).fontName ?? ''),
+        fontName,
+        bold: isBold(fontName),
+        italic: isItalic(fontName),
+        color,
+        fontFamily,
       })
     }
 
-    if (items.length === 0) continue
-
-    // ── 2. adaptive tolerance based on median height ───────────────────────
-    const heights = items.map((i) => i.height).filter((h) => h > 1).sort((a, b) => a - b)
-    const medH = heights[Math.floor(heights.length / 2)] || 10
-    const tolerance = medH * 0.45
-
-    // ── 3. group into lines, sort top→bottom ──────────────────────────────
-    // PDF Y origin is bottom-left → sort descending = top of page first
-    const lines = groupIntoLines(items, tolerance)
-    lines.sort((a, b) => b.y - a.y)
-
-    // ── 4. sort items left→right within each line ─────────────────────────
-    for (const line of lines) {
-      line.items.sort((a, b) => a.x - b.x)
+    // ── 2. extract images from this page ────────────────────────────────
+    let pageImages: { data: Uint8Array; width: number; height: number; y: number }[] = []
+    try {
+      const extracted = await extractImages(page)
+      pageImages = extracted.map(img => ({
+        data: img.data,
+        width: img.width,
+        height: img.height,
+        y: img.y,
+      }))
+    } catch {
+      // Image extraction failed — continue without images
     }
 
-    // ── 5. compute modal (most-common) font size = body text baseline ─────
+    if (items.length === 0 && pageImages.length === 0) continue
+
+    // ── 3. compute page-level stats ─────────────────────────────────────
     const sizeBuckets: Record<number, number> = {}
     for (const item of items) {
       const sz = Math.round(item.height)
@@ -179,46 +317,100 @@ async function extractParagraphs(file: File): Promise<RichParagraph[]> {
       Object.entries(sizeBuckets).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 12
     )
 
-    // ── 6. build paragraphs ───────────────────────────────────────────────
-    for (let li = 0; li < lines.length; li++) {
-      const line = lines[li]
-      const spans = buildSpans(line.items)
-      if (spans.length === 0 || spans.every((s) => !s.text.trim())) continue
+    const heights = items.map((i) => i.height).filter((h) => h > 1).sort((a, b) => a - b)
+    const medH = heights[Math.floor(heights.length / 2)] || 10
+    const tolerance = medH * 0.45
 
-      // Space-before: vertical gap significantly larger than normal line spacing
-      let spaceBefore = false
-      if (li > 0) {
-        const prev = lines[li - 1]
-        const gap = prev.y - line.y                  // positive = downward
-        const normalSpacing = prev.maxHeight * 1.4   // expected single-spacing
-        spaceBefore = gap > normalSpacing * 1.7
+    const lines = groupIntoLines(items, tolerance)
+    const leftPositions = lines.map((l) =>
+      l.items.length > 0 ? Math.min(...l.items.map((it) => it.x)) : 0
+    ).filter((x) => x > 0).sort((a, b) => a - b)
+    const medianLeftX = leftPositions[Math.floor(leftPositions.length / 2)] || 0
+
+    const isNewPage = pageNum > 1 && allBlocks.length > 0
+
+    // ── 4. detect tables ────────────────────────────────────────────────
+    const { tables, nonTableItems } = detectTables(items, pageWidth)
+
+    // ── 5. build paragraphs from non-table items ────────────────────────
+    const parasWithY = buildParagraphsFromItems(
+      nonTableItems, pageWidth, bodyFontSize, medianLeftX, isNewPage, pageNum === 1,
+    )
+
+    // ── 6. merge all blocks by Y position ───────────────────────────────
+    // Collect all positioned blocks
+    interface PositionedBlock {
+      y: number
+      block: ContentBlock
+    }
+
+    const positioned: PositionedBlock[] = []
+
+    // Add paragraphs
+    for (const pw of parasWithY) {
+      positioned.push({
+        y: pw.y,
+        block: { type: 'paragraph', paragraph: pw.paragraph },
+      })
+    }
+
+    // Add tables
+    for (const table of tables) {
+      positioned.push({
+        y: table.yTop,
+        block: { type: 'table', table },
+      })
+    }
+
+    // Add images
+    for (const img of pageImages) {
+      positioned.push({
+        y: img.y,
+        block: { type: 'image', data: img.data, width: img.width, height: img.height },
+      })
+    }
+
+    // Sort by Y descending (PDF: top of page = larger Y)
+    positioned.sort((a, b) => b.y - a.y)
+
+    // Apply page break to the first block of each page after page 1
+    if (isNewPage && positioned.length > 0) {
+      const first = positioned[0].block
+      if (first.type === 'paragraph') {
+        first.paragraph.pageBreakBefore = true
       }
+      // For tables/images as first block, prepend an empty paragraph with page break
+      else {
+        positioned.unshift({
+          y: positioned[0].y + 1,
+          block: {
+            type: 'paragraph',
+            paragraph: {
+              spans: [{ text: '', bold: false, italic: false, fontSize: 2 }],
+              isHeading: false,
+              headingLevel: 2,
+              spaceBefore: false,
+              align: 'left',
+              pageBreakBefore: true,
+            },
+          },
+        })
+      }
+    }
 
-      // Heading detection: larger than body OR bold+larger-than-body
-      const lineMaxH = line.maxHeight
-      const relSize = lineMaxH / (bodyFontSize || 12)
-      const allBold = line.items.every((i) => i.bold)
-      const isHeading = relSize >= 1.25 || (allBold && relSize >= 1.1)
-
-      let headingLevel: 1 | 2 | 3 = 2
-      if (relSize >= 1.8) headingLevel = 1
-      else if (relSize >= 1.35) headingLevel = 2
-      else headingLevel = 3
-
-      const align = detectAlign(line, pageWidth)
-
-      allParagraphs.push({ spans, isHeading, headingLevel, spaceBefore, align })
+    for (const p of positioned) {
+      allBlocks.push(p.block)
     }
   }
 
-  return allParagraphs
+  return allBlocks
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
 
 export default function PDFToWord() {
   const [fileName, setFileName] = useState('')
-  const [paragraphs, setParagraphs] = useState<RichParagraph[] | null>(null)
+  const [blocks, setBlocks] = useState<ContentBlock[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState(false)
@@ -230,11 +422,11 @@ export default function PDFToWord() {
       if (!files[0]) return
       setLoading(true)
       setError(null)
-      setParagraphs(null)
+      setBlocks(null)
       setFileName(files[0].name)
       try {
-        const result = await extractParagraphs(files[0])
-        setParagraphs(result)
+        const result = await extractContent(files[0])
+        setBlocks(result)
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Failed to extract text')
       } finally {
@@ -244,10 +436,10 @@ export default function PDFToWord() {
   })
 
   const handleDownload = async () => {
-    if (!paragraphs) return
+    if (!blocks) return
     setDownloading(true)
     try {
-      await buildAndDownloadDocx(paragraphs, fileName)
+      await buildAndDownloadDocx(blocks, fileName)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Download failed')
     } finally {
@@ -256,14 +448,22 @@ export default function PDFToWord() {
   }
 
   const handleReset = () => {
-    setParagraphs(null)
+    setBlocks(null)
     setFileName('')
     setError(null)
   }
 
-  const nonEmpty = paragraphs?.filter((p) =>
-    p.spans.some((s) => s.text.trim())
-  ) ?? []
+  // Count stats
+  const paragraphBlocks = blocks?.filter(b => b.type === 'paragraph') ?? []
+  const nonEmptyParas = paragraphBlocks.filter(b =>
+    b.type === 'paragraph' && b.paragraph.spans.some(s => s.text.trim())
+  )
+  const headingCount = paragraphBlocks.filter(
+    b => b.type === 'paragraph' && b.paragraph.isHeading
+  ).length
+  const tableCount = blocks?.filter(b => b.type === 'table').length ?? 0
+  const imageCount = blocks?.filter(b => b.type === 'image').length ?? 0
+  const hasContent = blocks !== null && blocks.length > 0
 
   return (
     <div className="p-8 max-w-3xl mx-auto space-y-6">
@@ -271,7 +471,7 @@ export default function PDFToWord() {
         <h2 className="text-xl font-semibold text-fg1 mb-1">PDF to Word</h2>
         <p className="text-sm text-fg2">
           Converts text PDFs to .docx preserving bold, italic, font sizes, heading levels,
-          paragraph spacing, and reading order.
+          paragraph spacing, tables, images, and reading order.
         </p>
       </div>
 
@@ -281,7 +481,7 @@ export default function PDFToWord() {
         </div>
       )}
 
-      {!paragraphs && (
+      {!blocks && (
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-2xl p-16 text-center cursor-pointer transition-colors
@@ -294,7 +494,7 @@ export default function PDFToWord() {
           {loading ? (
             <div className="flex flex-col items-center gap-3">
               <Spinner />
-              <p className="text-sm text-fg2">Extracting text and styles…</p>
+              <p className="text-sm text-fg2">Extracting text, tables, and images...</p>
             </div>
           ) : (
             <>
@@ -308,16 +508,21 @@ export default function PDFToWord() {
         </div>
       )}
 
-      {paragraphs && (
+      {blocks && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-fg1">{fileName}</p>
               <p className="text-sm text-fg2">
-                {nonEmpty.length} paragraph{nonEmpty.length !== 1 ? 's' : ''} extracted
+                {nonEmptyParas.length} paragraph{nonEmptyParas.length !== 1 ? 's' : ''}
                 {' · '}
-                {paragraphs.filter((p) => p.isHeading).length} heading
-                {paragraphs.filter((p) => p.isHeading).length !== 1 ? 's' : ''}
+                {headingCount} heading{headingCount !== 1 ? 's' : ''}
+                {tableCount > 0 && (
+                  <> · {tableCount} table{tableCount !== 1 ? 's' : ''}</>
+                )}
+                {imageCount > 0 && (
+                  <> · {imageCount} image{imageCount !== 1 ? 's' : ''}</>
+                )}
               </p>
             </div>
             <div className="flex gap-2">
@@ -327,14 +532,14 @@ export default function PDFToWord() {
               <Button
                 size="sm"
                 onClick={handleDownload}
-                disabled={downloading || nonEmpty.length === 0}
+                disabled={downloading || !hasContent}
               >
-                {downloading ? 'Generating…' : 'Download .docx'}
+                {downloading ? 'Generating...' : 'Download .docx'}
               </Button>
             </div>
           </div>
 
-          {nonEmpty.length === 0 ? (
+          {!hasContent ? (
             <div className="border border-orange-700/60 bg-orange-950/30 rounded-xl p-6 text-center">
               <p className="text-orange-400 font-medium">No text found</p>
               <p className="text-orange-500 text-sm mt-1">
@@ -342,7 +547,7 @@ export default function PDFToWord() {
               </p>
             </div>
           ) : (
-            <PreviewPane paragraphs={nonEmpty} />
+            <PreviewPane blocks={blocks} />
           )}
         </div>
       )}

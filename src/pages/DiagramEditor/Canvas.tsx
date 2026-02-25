@@ -2,12 +2,14 @@ import {
   useRef, useEffect, useCallback, useState,
   forwardRef, useImperativeHandle,
 } from 'react'
-import { Shape, Tool, Style, Viewport, Pt, BoxShape, ConnShape, Background } from './types'
+import { Shape, Tool, Style, Viewport, Pt, BoxShape, ConnShape, Background, PortAttach } from './types'
 import {
   renderShape, renderGrid, getBBox, hitTest, buildPreview,
   getHandlePositions, applyResize, applyMoveOffset, HANDLE_SIZE,
+  renderRubberBand, findNearestPort, renderPorts, getPortPosition,
 } from './renderer'
 import { nextId } from './useEditor'
+import { snapPoint, snapToGrid } from './gridUtils'
 
 // ── Public handle ─────────────────────────────────────────────────────────
 
@@ -65,18 +67,24 @@ const HANDLE_CURSORS = [
 
 interface Props {
   shapes: Shape[]
-  selectedId: string | null
+  selectedIds: string[]
   tool: Tool
   style: Style
   background: Background
+  gridSnap?: boolean
   onAddShape:    (s: Shape) => void
   onMoveShape:   (id: string, dx: number, dy: number) => void
-  onSelect:      (id: string | null) => void
+  onMoveShapes:  (ids: string[], dx: number, dy: number) => void
+  onSelect:      (ids: string[]) => void
   onDeleteShape: (id: string) => void
+  onDeleteSelected: () => void
   onUpdateShape: (id: string, patch: Partial<Shape>) => void
   onToolChange:  (t: Tool) => void
   onUndo: () => void
   onRedo: () => void
+  onCopySelected: () => void
+  onPasteClipboard: () => void
+  onDuplicateSelected: () => void
 }
 
 // ── Coordinate helpers ────────────────────────────────────────────────────
@@ -91,7 +99,7 @@ function getPos(canvas: HTMLCanvasElement, e: React.PointerEvent | React.MouseEv
 }
 
 function isBoxShape(s: Shape): s is BoxShape {
-  return ['rect','roundrect','diamond','ellipse','parallelogram'].includes(s.type)
+  return ['rect','roundrect','diamond','ellipse','parallelogram','star','triangle','hexagon'].includes(s.type)
 }
 
 function isConnShape(s: Shape): s is ConnShape {
@@ -102,9 +110,11 @@ function isConnShape(s: Shape): s is ConnShape {
 
 const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   {
-    shapes, selectedId, tool, style, background,
-    onAddShape, onMoveShape, onSelect, onDeleteShape, onUpdateShape,
-    onToolChange, onUndo, onRedo,
+    shapes, selectedIds, tool, style, background,
+    gridSnap,
+    onAddShape, onMoveShape, onMoveShapes, onSelect, onDeleteShape, onDeleteSelected,
+    onUpdateShape, onToolChange, onUndo, onRedo,
+    onCopySelected, onPasteClipboard, onDuplicateSelected,
   },
   ref,
 ) {
@@ -116,12 +126,12 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
   // Mirror props into refs so pointer handlers never have stale closures
   const shapesRef   = useRef(shapes)
-  const selectedRef = useRef(selectedId)
+  const selectedRef = useRef<string[]>(selectedIds)
   const toolRef     = useRef(tool)
   const styleRef      = useRef(style)
   const backgroundRef = useRef(background)
   useEffect(() => { shapesRef.current     = shapes     }, [shapes])
-  useEffect(() => { selectedRef.current  = selectedId }, [selectedId])
+  useEffect(() => { selectedRef.current  = selectedIds }, [selectedIds])
   useEffect(() => {
     toolRef.current = tool
     if (tool !== 'eraser') eraserPosRef.current = null  // clear cursor preview
@@ -129,14 +139,25 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   useEffect(() => { styleRef.current     = style      }, [style])
   useEffect(() => { backgroundRef.current = background }, [background])
 
+  const gridSnapRef = useRef(gridSnap ?? false)
+  useEffect(() => { gridSnapRef.current = gridSnap ?? false }, [gridSnap])
+
   // ── Drawing refs ──────────────────────────────────────────────────────
   const penPtsRef    = useRef<Pt[]>([])
   const drawStartRef = useRef<{ wx: number; wy: number } | null>(null)
   const previewRef   = useRef<Shape | null>(null)
 
-  // ── Drag-to-move ──────────────────────────────────────────────────────
-  const dragRef      = useRef<{ id: string; wx: number; wy: number; moved: boolean } | null>(null)
+  // ── Smart connector refs ────────────────────────────────────────────
+  const connStartAttachRef = useRef<PortAttach | null>(null)
+  const connHoverPortRef   = useRef<{ shapeId: string; port: string; x: number; y: number } | null>(null)
+
+  // ── Drag-to-move (supports multi-select) ─────────────────────────────
+  const dragRef      = useRef<{ ids: string[]; wx: number; wy: number; moved: boolean } | null>(null)
   const dragOffRef   = useRef({ dx: 0, dy: 0 })
+
+  // ── Rubber-band selection ──────────────────────────────────────────────
+  const rubberRef    = useRef<{ wx: number; wy: number } | null>(null)  // start point in world
+  const rubberEndRef = useRef<{ wx: number; wy: number } | null>(null)  // current end point
 
   // ── Resize ────────────────────────────────────────────────────────────
   const resizeRef     = useRef<ResizeState | null>(null)
@@ -192,19 +213,51 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
     renderGrid(ctx, vp, W, H, backgroundRef.current)
 
-    for (const s of shapesRef.current) {
+    const selSet = new Set(selectedRef.current)
+    const dragIds = dragRef.current?.moved ? new Set(dragRef.current.ids) : null
+
+    const allShapes = shapesRef.current
+
+    for (const s of allShapes) {
       let draw: Shape = s
       if (resizeRef.current?.shapeId === s.id && resizeLiveRef.current) {
         draw = resizeLiveRef.current
       } else if (ctrlRef.current?.shapeId === s.id && ctrlLiveRef.current) {
         draw = ctrlLiveRef.current
-      } else if (dragRef.current?.moved && dragRef.current.id === s.id) {
+      } else if (dragIds && dragIds.has(s.id)) {
         draw = applyMoveOffset(s, dragOffRef.current.dx, dragOffRef.current.dy)
       }
-      renderShape(ctx, draw, draw.id === selectedRef.current)
+      renderShape(ctx, draw, selSet.has(draw.id), undefined, allShapes)
     }
 
-    if (previewRef.current) renderShape(ctx, previewRef.current, false)
+    if (previewRef.current) renderShape(ctx, previewRef.current, false, undefined, allShapes)
+
+    // ── Port indicators during connector tool usage ──
+    const isConnTool = toolRef.current === 'arrow' || toolRef.current === 'dashed-arrow' || toolRef.current === 'line'
+    if (isConnTool && drawStartRef.current) {
+      // Show ports on shape being hovered near
+      if (connHoverPortRef.current) {
+        const hoverShape = allShapes.find(s => s.id === connHoverPortRef.current!.shapeId)
+        if (hoverShape && isBoxShape(hoverShape)) {
+          renderPorts(ctx, hoverShape, vp)
+        }
+      }
+      // Also show ports on the shape the start is attached to
+      if (connStartAttachRef.current) {
+        const startShape = allShapes.find(s => s.id === connStartAttachRef.current!.shapeId)
+        if (startShape && isBoxShape(startShape)) {
+          renderPorts(ctx, startShape, vp)
+        }
+      }
+    }
+
+    // ── Rubber-band selection rectangle ──
+    if (rubberRef.current && rubberEndRef.current) {
+      const r0 = rubberRef.current, r1 = rubberEndRef.current
+      const rx = Math.min(r0.wx, r1.wx), ry = Math.min(r0.wy, r1.wy)
+      const rw = Math.abs(r1.wx - r0.wx), rh = Math.abs(r1.wy - r0.wy)
+      renderRubberBand(ctx, rx, ry, rw, rh)
+    }
 
     // ── Eraser cursor circle ──
     if (toolRef.current === 'eraser' && eraserPosRef.current) {
@@ -244,7 +297,7 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     return () => ro.disconnect()
   }, [render])
 
-  useEffect(() => { render() }, [shapes, selectedId, background, tool, render])
+  useEffect(() => { render() }, [shapes, selectedIds, background, tool, render])
 
   // ── Keyboard ──────────────────────────────────────────────────────────
 
@@ -253,10 +306,14 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       if (document.activeElement === textareaRef.current) return
       if (e.key === ' ') { spaceRef.current = true; e.preventDefault(); return }
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        const id = selectedRef.current
-        if (id) { onDeleteShape(id); e.preventDefault() }
+        if (selectedRef.current.length > 0) { onDeleteSelected(); e.preventDefault() }
         return
       }
+      // Copy / Paste / Duplicate
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'c') { onCopySelected(); e.preventDefault(); return }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'v') { onPasteClipboard(); e.preventDefault(); return }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'd') { onDuplicateSelected(); e.preventDefault(); return }
+      // Undo / Redo
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { onUndo(); e.preventDefault(); return }
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) { onRedo(); e.preventDefault() }
     }
@@ -264,7 +321,7 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup',   onKeyUp)
     return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp) }
-  }, [onDeleteShape, onUndo, onRedo])
+  }, [onDeleteSelected, onUndo, onRedo, onCopySelected, onPasteClipboard, onDuplicateSelected])
 
   // ── Exposed imperative handle ─────────────────────────────────────────
 
@@ -294,7 +351,7 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
   const commitShape = useCallback((shape: Shape) => {
     onAddShape(shape)
     onToolChange('select')   // auto-switch so selection handles are usable immediately
-    onSelect(shape.id)
+    onSelect([shape.id])
   }, [onAddShape, onToolChange, onSelect])
 
   // ── Pointer down ──────────────────────────────────────────────────────
@@ -341,58 +398,82 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
     // ── Select tool ───────────────────────────────────────────────────
     if (t === 'select') {
-      const selId = selectedRef.current
-      const selShape = selId ? shapesRef.current.find(s => s.id === selId) : null
+      const selIds = selectedRef.current
+      const selIdSet = new Set(selIds)
 
-      // 1. Control-point hit on curved connector
-      if (selShape && isConnShape(selShape) && selShape.cx !== undefined && selShape.cy !== undefined) {
-        const hitR = Math.max(10, 12 / vpRef.current.scale)
-        if (Math.hypot(wx - selShape.cx, wy - selShape.cy) <= hitR) {
-          ctrlRef.current  = { shapeId: selShape.id }
-          ctrlLiveRef.current = { ...selShape }
-          return
+      // 1. Control-point hit on curved connector (only when single selected)
+      if (selIds.length === 1) {
+        const selShape = shapesRef.current.find(s => s.id === selIds[0]) ?? null
+        if (selShape && isConnShape(selShape) && selShape.cx !== undefined && selShape.cy !== undefined) {
+          const hitR = Math.max(10, 12 / vpRef.current.scale)
+          if (Math.hypot(wx - selShape.cx, wy - selShape.cy) <= hitR) {
+            ctrlRef.current  = { shapeId: selShape.id }
+            ctrlLiveRef.current = { ...selShape }
+            return
+          }
         }
       }
 
-      // 2. Resize handle hit on box shape
-      if (selShape && isBoxShape(selShape)) {
-        const bb = getBBox(selShape)
-        if (bb) {
-          const hitR = Math.max(HANDLE_SIZE + 3, 10 / vpRef.current.scale)
-          const handles = getHandlePositions(bb)
-          for (let i = 0; i < handles.length; i++) {
-            const [hx, hy] = handles[i]
-            if (Math.abs(wx - hx) <= hitR && Math.abs(wy - hy) <= hitR) {
-              resizeRef.current = {
-                shapeId: selShape.id, handleIdx: i,
-                origX: bb.x, origY: bb.y, origW: bb.w, origH: bb.h,
-                startWx: wx, startWy: wy,
+      // 2. Resize handle hit on box shape (only when single selected)
+      if (selIds.length === 1) {
+        const selShape = shapesRef.current.find(s => s.id === selIds[0]) ?? null
+        if (selShape && isBoxShape(selShape)) {
+          const bb = getBBox(selShape)
+          if (bb) {
+            const hitR = Math.max(HANDLE_SIZE + 3, 10 / vpRef.current.scale)
+            const handles = getHandlePositions(bb)
+            for (let i = 0; i < handles.length; i++) {
+              const [hx, hy] = handles[i]
+              if (Math.abs(wx - hx) <= hitR && Math.abs(wy - hy) <= hitR) {
+                resizeRef.current = {
+                  shapeId: selShape.id, handleIdx: i,
+                  origX: bb.x, origY: bb.y, origW: bb.w, origH: bb.h,
+                  startWx: wx, startWy: wy,
+                }
+                resizeLiveRef.current = { ...selShape }
+                canvas.style.cursor = HANDLE_CURSORS[i]
+                return
               }
-              resizeLiveRef.current = { ...selShape }
-              canvas.style.cursor = HANDLE_CURSORS[i]
-              return
             }
           }
         }
       }
 
-      // 3. Shape body hit → drag (pen shapes: select only, not draggable)
+      // 3. Shape body hit → drag / select
       const hit = [...shapesRef.current].reverse().find(s => hitTest(s, wx, wy))
       if (hit) {
-        onSelect(hit.id)
-        if (hit.type !== 'pen') {
-          dragRef.current = { id: hit.id, wx, wy, moved: false }
+        const isShift = (e as React.PointerEvent).shiftKey
+        if (isShift) {
+          // Shift+click: toggle selection
+          if (selIdSet.has(hit.id)) {
+            onSelect(selIds.filter(id => id !== hit.id))
+          } else {
+            onSelect([...selIds, hit.id])
+          }
+        } else {
+          // If clicking an already-selected shape in a multi-select, keep selection for drag
+          if (!selIdSet.has(hit.id)) {
+            onSelect([hit.id])
+          }
+          // Start drag for all currently selected shapes (or the newly selected one)
+          const dragTargets = selIdSet.has(hit.id) ? selIds : [hit.id]
+          dragRef.current = { ids: dragTargets, wx, wy, moved: false }
           dragOffRef.current = { dx: 0, dy: 0 }
         }
       } else {
-        onSelect(null)
+        // Click on empty area: start rubber-band selection
+        if (!(e as React.PointerEvent).shiftKey) {
+          onSelect([])
+        }
+        rubberRef.current = { wx, wy }
+        rubberEndRef.current = { wx, wy }
       }
       return
     }
 
     // ── Text tool ─────────────────────────────────────────────────────
     if (t === 'text') {
-      onSelect(null)   // clear any stale selection so style changes don't hit old shapes
+      onSelect([])   // clear any stale selection so style changes don't hit old shapes
       const next: TextEditState = { shapeId: null, wx, wy, sx, sy, initial: '' }
       if (textEdit) {
         // A textarea is already open. pointerdown fires before blur, so if we
@@ -425,7 +506,32 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     }
 
     // ── Box / connector tools ─────────────────────────────────────────
-    drawStartRef.current = { wx, wy }
+    const isConnTool = t === 'arrow' || t === 'dashed-arrow' || t === 'line'
+
+    if (isConnTool) {
+      // Check if clicking near a port for smart connector start
+      const nearPort = findNearestPort(shapesRef.current, wx, wy)
+      if (nearPort) {
+        connStartAttachRef.current = { shapeId: nearPort.shapeId, port: nearPort.port }
+        drawStartRef.current = { wx: nearPort.x, wy: nearPort.y }
+      } else {
+        connStartAttachRef.current = null
+        if (gridSnapRef.current) {
+          const snapped = snapPoint(wx, wy)
+          drawStartRef.current = { wx: snapped.x, wy: snapped.y }
+        } else {
+          drawStartRef.current = { wx, wy }
+        }
+      }
+    } else {
+      connStartAttachRef.current = null
+      if (gridSnapRef.current) {
+        const snapped = snapPoint(wx, wy)
+        drawStartRef.current = { wx: snapped.x, wy: snapped.y }
+      } else {
+        drawStartRef.current = { wx, wy }
+      }
+    }
   }, [onSelect])
 
   // ── Pointer move ──────────────────────────────────────────────────────
@@ -490,27 +596,28 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
     // ── Select: hover cursor ──
     if (t === 'select') {
-      const selId = selectedRef.current
-      const selShape = selId ? shapesRef.current.find(s => s.id === selId) : null
+      const selIds = selectedRef.current
 
-      // Check control point
-      if (selShape && isConnShape(selShape) && selShape.cx !== undefined && selShape.cy !== undefined) {
-        const hitR = Math.max(10, 12 / vpRef.current.scale)
-        if (Math.hypot(wx - selShape.cx, wy - selShape.cy) <= hitR) {
-          canvas.style.cursor = 'crosshair'; return
+      // Check control point (single-select only)
+      if (selIds.length === 1) {
+        const selShape = shapesRef.current.find(s => s.id === selIds[0]) ?? null
+        if (selShape && isConnShape(selShape) && selShape.cx !== undefined && selShape.cy !== undefined) {
+          const hitR = Math.max(10, 12 / vpRef.current.scale)
+          if (Math.hypot(wx - selShape.cx, wy - selShape.cy) <= hitR) {
+            canvas.style.cursor = 'crosshair'; return
+          }
         }
-      }
-
-      // Check resize handles
-      if (selShape && isBoxShape(selShape)) {
-        const bb = getBBox(selShape)
-        if (bb) {
-          const hitR = Math.max(HANDLE_SIZE + 3, 10 / vpRef.current.scale)
-          const handles = getHandlePositions(bb)
-          for (let i = 0; i < handles.length; i++) {
-            const [hx, hy] = handles[i]
-            if (Math.abs(wx - hx) <= hitR && Math.abs(wy - hy) <= hitR) {
-              canvas.style.cursor = HANDLE_CURSORS[i]; return
+        // Check resize handles (single-select only)
+        if (selShape && isBoxShape(selShape)) {
+          const bb = getBBox(selShape)
+          if (bb) {
+            const hitR = Math.max(HANDLE_SIZE + 3, 10 / vpRef.current.scale)
+            const handles = getHandlePositions(bb)
+            for (let i = 0; i < handles.length; i++) {
+              const [hx, hy] = handles[i]
+              if (Math.abs(wx - hx) <= hitR && Math.abs(wy - hy) <= hitR) {
+                canvas.style.cursor = HANDLE_CURSORS[i]; return
+              }
             }
           }
         }
@@ -520,7 +627,13 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
       canvas.style.cursor = shapesRef.current.some(s => hitTest(s, wx, wy)) ? 'move' : 'default'
     }
 
-    // ── Drag-to-move ──
+    // ── Rubber-band selection ──
+    if (t === 'select' && rubberRef.current) {
+      rubberEndRef.current = { wx, wy }
+      render(); return
+    }
+
+    // ── Drag-to-move (multi) ──
     if (t === 'select' && dragRef.current) {
       const dx = wx - dragRef.current.wx, dy = wy - dragRef.current.wy
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
@@ -544,7 +657,35 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     // ── Box / connector preview ──
     if (drawStartRef.current) {
       const { wx: x0, wy: y0 } = drawStartRef.current
-      previewRef.current = buildPreview(t, x0, y0, wx, wy, styleRef.current)
+      let finalWx = wx, finalWy = wy
+
+      const isConnTool = t === 'arrow' || t === 'dashed-arrow' || t === 'line'
+      if (isConnTool) {
+        // Check for port hover to snap endpoint
+        const excludeId = connStartAttachRef.current?.shapeId
+        const nearPort = findNearestPort(shapesRef.current, wx, wy, excludeId)
+        if (nearPort) {
+          connHoverPortRef.current = nearPort
+          finalWx = nearPort.x
+          finalWy = nearPort.y
+        } else {
+          connHoverPortRef.current = null
+          if (gridSnapRef.current) {
+            const snapped = snapPoint(wx, wy)
+            finalWx = snapped.x
+            finalWy = snapped.y
+          }
+        }
+      } else {
+        connHoverPortRef.current = null
+        if (gridSnapRef.current) {
+          const snapped = snapPoint(wx, wy)
+          finalWx = snapped.x
+          finalWy = snapped.y
+        }
+      }
+
+      previewRef.current = buildPreview(t, x0, y0, finalWx, finalWy, styleRef.current)
       render()
     }
   }, [render, onDeleteShape])
@@ -580,9 +721,40 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
 
     const t = toolRef.current
 
-    // ── Commit drag ──
+    // ── Commit rubber-band selection ──
+    if (t === 'select' && rubberRef.current) {
+      const r0 = rubberRef.current, r1 = rubberEndRef.current ?? r0
+      const rx = Math.min(r0.wx, r1.wx), ry = Math.min(r0.wy, r1.wy)
+      const rw = Math.abs(r1.wx - r0.wx), rh = Math.abs(r1.wy - r0.wy)
+      // Only select if the rubber band is large enough (not just a click)
+      if (rw > 3 || rh > 3) {
+        const hits = shapesRef.current.filter(s => {
+          const bb = getBBox(s)
+          if (!bb) return false
+          // Intersection test: shape bbox overlaps rubber-band rect
+          return bb.x + bb.w >= rx && bb.x <= rx + rw &&
+                 bb.y + bb.h >= ry && bb.y <= ry + rh
+        }).map(s => s.id)
+        onSelect(hits)
+      }
+      rubberRef.current = null; rubberEndRef.current = null
+      render(); return
+    }
+
+    // ── Commit drag (multi) ──
     if (t === 'select' && dragRef.current) {
-      if (dragRef.current.moved) onMoveShape(dragRef.current.id, dragOffRef.current.dx, dragOffRef.current.dy)
+      if (dragRef.current.moved) {
+        let { dx, dy } = dragOffRef.current
+        if (gridSnapRef.current) {
+          dx = snapToGrid(dx)
+          dy = snapToGrid(dy)
+        }
+        if (dragRef.current.ids.length === 1) {
+          onMoveShape(dragRef.current.ids[0], dx, dy)
+        } else {
+          onMoveShapes(dragRef.current.ids, dx, dy)
+        }
+      }
       dragRef.current = null; dragOffRef.current = { dx: 0, dy: 0 }
       render(); return
     }
@@ -598,16 +770,49 @@ const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(
     // ── Commit box / connector ──
     if (drawStartRef.current) {
       const { wx: x0, wy: y0 } = drawStartRef.current
-      const shape = buildPreview(t, x0, y0, wx, wy, styleRef.current)
+      let finalWx = wx, finalWy = wy
+      const isConn = t === 'arrow' || t === 'dashed-arrow' || t === 'line'
+
+      let endAttach: PortAttach | undefined
+      if (isConn) {
+        // Check if releasing near a port for smart connector end
+        const excludeId = connStartAttachRef.current?.shapeId
+        const nearPort = findNearestPort(shapesRef.current, wx, wy, excludeId)
+        if (nearPort) {
+          endAttach = { shapeId: nearPort.shapeId, port: nearPort.port }
+          finalWx = nearPort.x
+          finalWy = nearPort.y
+        } else if (gridSnapRef.current) {
+          const snapped = snapPoint(wx, wy)
+          finalWx = snapped.x
+          finalWy = snapped.y
+        }
+      } else if (gridSnapRef.current) {
+        const snapped = snapPoint(wx, wy)
+        finalWx = snapped.x
+        finalWy = snapped.y
+      }
+
+      const shape = buildPreview(t, x0, y0, finalWx, finalWy, styleRef.current)
       if (shape) {
-        const isConn = t === 'arrow' || t === 'dashed-arrow' || t === 'line'
-        const big = isConn ? Math.hypot(wx-x0, wy-y0) > 6 : Math.abs(wx-x0) > 6 || Math.abs(wy-y0) > 6
-        if (big) commitShape({ ...shape, id: nextId() } as Shape)
-        else onSelect(null)   // click without drag → deselect
+        const big = isConn ? Math.hypot(finalWx-x0, finalWy-y0) > 6 : Math.abs(finalWx-x0) > 6 || Math.abs(finalWy-y0) > 6
+        if (big) {
+          const newShape = { ...shape, id: nextId() } as Shape
+          // Attach smart connector ports if applicable
+          if (isConn) {
+            const conn = newShape as ConnShape
+            if (connStartAttachRef.current) conn.startAttach = connStartAttachRef.current
+            if (endAttach) conn.endAttach = endAttach
+          }
+          commitShape(newShape)
+        } else {
+          onSelect([])   // click without drag → deselect
+        }
       }
       drawStartRef.current = null; previewRef.current = null
+      connStartAttachRef.current = null; connHoverPortRef.current = null
     }
-  }, [onMoveShape, onSelect, onUpdateShape, commitShape, render])
+  }, [onMoveShape, onMoveShapes, onSelect, onUpdateShape, commitShape, render])
 
   // ── Wheel zoom ────────────────────────────────────────────────────────
 
