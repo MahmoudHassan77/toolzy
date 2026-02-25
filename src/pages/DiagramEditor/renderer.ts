@@ -1,4 +1,39 @@
-import { Shape, Style, Viewport, BBox, ConnShape, BoxShape, Background } from './types'
+import { Shape, Style, Viewport, BBox, ConnShape, BoxShape, Background, PortSide, PortAttach } from './types'
+
+// ── Multi-select helpers ──────────────────────────────────────────────────
+
+/** Returns the union bounding box of all selected shapes */
+export function getSelectionBBox(shapes: Shape[], ids: string[]): BBox | null {
+  if (ids.length === 0) return null
+  const idSet = new Set(ids)
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const s of shapes) {
+    if (!idSet.has(s.id)) continue
+    const bb = getBBox(s)
+    if (!bb) continue
+    minX = Math.min(minX, bb.x)
+    minY = Math.min(minY, bb.y)
+    maxX = Math.max(maxX, bb.x + bb.w)
+    maxY = Math.max(maxY, bb.y + bb.h)
+  }
+  if (!isFinite(minX)) return null
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY }
+}
+
+/** Render a rubber-band selection rectangle (dashed blue) */
+export function renderRubberBand(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+) {
+  ctx.save()
+  ctx.fillStyle = 'rgba(59,130,246,0.08)'
+  ctx.fillRect(x, y, w, h)
+  ctx.strokeStyle = '#3b82f6'
+  ctx.lineWidth = 1.2
+  ctx.setLineDash([5, 3])
+  ctx.strokeRect(x, y, w, h)
+  ctx.restore()
+}
 
 // ── Selection handle constants (must match Canvas hit detection) ───────────
 export const HANDLE_PAD = 7   // world-unit padding around bbox
@@ -17,6 +52,77 @@ export function getHandlePositions(bb: BBox): [number, number][] {
     [x + w / 2, y + h],      // 6 BC
     [x + w,     y + h],      // 7 BR
   ]
+}
+
+// ── Smart connector port helpers ──────────────────────────────────────────
+
+const BOX_TYPES = new Set(['rect','roundrect','diamond','ellipse','parallelogram','star','triangle','hexagon'])
+
+function isBoxType(s: Shape): s is BoxShape {
+  return BOX_TYPES.has(s.type)
+}
+
+/** Get the world position of a named port on a box shape */
+export function getPortPosition(shape: BoxShape, port: PortSide): { x: number; y: number } {
+  // Normalize to positive dimensions for correct port positions
+  const x = Math.min(shape.x, shape.x + shape.w)
+  const y = Math.min(shape.y, shape.y + shape.h)
+  const w = Math.abs(shape.w)
+  const h = Math.abs(shape.h)
+  switch (port) {
+    case 'top':    return { x: x + w / 2, y }
+    case 'right':  return { x: x + w,     y: y + h / 2 }
+    case 'bottom': return { x: x + w / 2, y: y + h }
+    case 'left':   return { x,            y: y + h / 2 }
+  }
+}
+
+/** Render port indicator circles on a box shape (blue dots at all 4 sides) */
+export function renderPorts(ctx: CanvasRenderingContext2D, shape: BoxShape, vp: Viewport) {
+  const ports: PortSide[] = ['top', 'right', 'bottom', 'left']
+  const radius = 6 / vp.scale
+  ctx.save()
+  for (const port of ports) {
+    const { x, y } = getPortPosition(shape, port)
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(59,130,246,0.7)'
+    ctx.fill()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2 / vp.scale
+    ctx.setLineDash([])
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+/** Find the nearest port within `threshold` world-units of (wx, wy). */
+export function findNearestPort(
+  shapes: Shape[], wx: number, wy: number, excludeId?: string, threshold = 20,
+): { shapeId: string; port: PortSide; x: number; y: number } | null {
+  let best: { shapeId: string; port: PortSide; x: number; y: number } | null = null
+  let bestDist = threshold
+  const ports: PortSide[] = ['top', 'right', 'bottom', 'left']
+  for (const s of shapes) {
+    if (!isBoxType(s)) continue
+    if (excludeId && s.id === excludeId) continue
+    for (const port of ports) {
+      const pos = getPortPosition(s, port)
+      const d = Math.hypot(pos.x - wx, pos.y - wy)
+      if (d < bestDist) {
+        bestDist = d
+        best = { shapeId: s.id, port, x: pos.x, y: pos.y }
+      }
+    }
+  }
+  return best
+}
+
+/** Resolve a PortAttach to its current world position (or null if shape not found) */
+export function resolveAttach(shapes: Shape[], attach: PortAttach): { x: number; y: number } | null {
+  const shape = shapes.find(s => s.id === attach.shapeId)
+  if (!shape || !isBoxType(shape)) return null
+  return getPortPosition(shape, attach.port)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -97,6 +203,9 @@ export function getBBox(shape: Shape): BBox | null {
     case 'diamond':
     case 'ellipse':
     case 'parallelogram':
+    case 'star':
+    case 'triangle':
+    case 'hexagon':
       return {
         x: Math.min(shape.x, shape.x + shape.w),
         y: Math.min(shape.y, shape.y + shape.h),
@@ -153,6 +262,7 @@ export function renderShape(
   shape: Shape,
   selected = false,
   dragOffset?: { dx: number; dy: number },
+  allShapes?: Shape[],
 ) {
   ctx.save()
   if (dragOffset) ctx.translate(dragOffset.dx, dragOffset.dy)
@@ -237,17 +347,87 @@ export function renderShape(
       break
     }
 
+    case 'star': {
+      applyStyle(ctx, shape.style)
+      const cx = shape.x + shape.w / 2, cy = shape.y + shape.h / 2
+      const outerRx = Math.abs(shape.w) / 2, outerRy = Math.abs(shape.h) / 2
+      const innerRx = outerRx * 0.38, innerRy = outerRy * 0.38
+      const points = 5
+      ctx.beginPath()
+      for (let i = 0; i < points * 2; i++) {
+        // Start from top (-PI/2), alternate outer/inner vertices
+        const angle = -Math.PI / 2 + (i * Math.PI) / points
+        const rx = i % 2 === 0 ? outerRx : innerRx
+        const ry = i % 2 === 0 ? outerRy : innerRy
+        const px = cx + rx * Math.cos(angle)
+        const py = cy + ry * Math.sin(angle)
+        if (i === 0) ctx.moveTo(px, py)
+        else ctx.lineTo(px, py)
+      }
+      ctx.closePath()
+      ctx.fill(); ctx.stroke()
+      drawLabel(ctx, shape.label, cx, cy, shape.style)
+      break
+    }
+
+    case 'triangle': {
+      applyStyle(ctx, shape.style)
+      const cx = shape.x + shape.w / 2
+      // Three vertices: top-center, bottom-left, bottom-right
+      ctx.beginPath()
+      ctx.moveTo(cx, shape.y)                                  // top
+      ctx.lineTo(shape.x + shape.w, shape.y + shape.h)         // bottom-right
+      ctx.lineTo(shape.x, shape.y + shape.h)                   // bottom-left
+      ctx.closePath()
+      ctx.fill(); ctx.stroke()
+      // Label centered vertically at 2/3 height (visual center of triangle)
+      drawLabel(ctx, shape.label, cx, shape.y + shape.h * 0.6, shape.style)
+      break
+    }
+
+    case 'hexagon': {
+      applyStyle(ctx, shape.style)
+      const cx = shape.x + shape.w / 2, cy = shape.y + shape.h / 2
+      const rx = Math.abs(shape.w) / 2, ry = Math.abs(shape.h) / 2
+      ctx.beginPath()
+      for (let i = 0; i < 6; i++) {
+        // Start from top (-PI/2) → flat-top hexagon
+        const angle = -Math.PI / 2 + (i * Math.PI) / 3
+        const px = cx + rx * Math.cos(angle)
+        const py = cy + ry * Math.sin(angle)
+        if (i === 0) ctx.moveTo(px, py)
+        else ctx.lineTo(px, py)
+      }
+      ctx.closePath()
+      ctx.fill(); ctx.stroke()
+      drawLabel(ctx, shape.label, cx, cy, shape.style)
+      break
+    }
+
     case 'arrow':
     case 'dashed-arrow':
     case 'line': {
+      // Resolve smart connector attachments to override endpoints
+      let sx1 = shape.x1, sy1 = shape.y1, sx2 = shape.x2, sy2 = shape.y2
+      if (allShapes) {
+        if (shape.startAttach) {
+          const pos = resolveAttach(allShapes, shape.startAttach)
+          if (pos) { sx1 = pos.x; sy1 = pos.y }
+        }
+        if (shape.endAttach) {
+          const pos = resolveAttach(allShapes, shape.endAttach)
+          if (pos) { sx2 = pos.x; sy2 = pos.y }
+        }
+      }
+
       applyStyle(ctx, shape.style, shape.type === 'dashed-arrow')
       const hasCurve = shape.cx !== undefined && shape.cy !== undefined
       ctx.beginPath()
-      ctx.moveTo(shape.x1, shape.y1)
+      ctx.moveTo(sx1, sy1)
       if (hasCurve) {
-        ctx.quadraticCurveTo(shape.cx!, shape.cy!, shape.x2, shape.y2)
+        ctx.quadraticCurveTo(shape.cx!, shape.cy!, sx2, sy2)
       } else {
-        ctx.lineTo(shape.x2, shape.y2)
+        ctx.lineTo(sx2, sy2)
       }
       ctx.stroke()
 
@@ -256,25 +436,50 @@ export function renderShape(
         ctx.strokeStyle = shape.style.stroke
         ctx.lineWidth = shape.style.lineWidth
         // Tangent direction at endpoint
-        const fromX = hasCurve ? shape.cx! : shape.x1
-        const fromY = hasCurve ? shape.cy! : shape.y1
-        arrowHead(ctx, fromX, fromY, shape.x2, shape.y2, 12, shape.type === 'arrow')
+        const fromX = hasCurve ? shape.cx! : sx1
+        const fromY = hasCurve ? shape.cy! : sy1
+        arrowHead(ctx, fromX, fromY, sx2, sy2, 12, shape.type === 'arrow')
         if (shape.style.arrowBoth) {
-          const fromX2 = hasCurve ? shape.cx! : shape.x2
-          const fromY2 = hasCurve ? shape.cy! : shape.y2
-          arrowHead(ctx, fromX2, fromY2, shape.x1, shape.y1, 12, shape.type === 'arrow')
+          const fromX2 = hasCurve ? shape.cx! : sx2
+          const fromY2 = hasCurve ? shape.cy! : sy2
+          arrowHead(ctx, fromX2, fromY2, sx1, sy1, 12, shape.type === 'arrow')
         }
       }
 
       if (shape.label) {
         const lx = hasCurve
-          ? (shape.x1 + 2 * shape.cx! + shape.x2) / 4   // bezier midpoint approximation
-          : (shape.x1 + shape.x2) / 2
+          ? (sx1 + 2 * shape.cx! + sx2) / 4   // bezier midpoint approximation
+          : (sx1 + sx2) / 2
         const ly = hasCurve
-          ? (shape.y1 + 2 * shape.cy! + shape.y2) / 4
-          : (shape.y1 + shape.y2) / 2
-        const angle = Math.atan2(shape.y2 - shape.y1, shape.x2 - shape.x1)
+          ? (sy1 + 2 * shape.cy! + sy2) / 4
+          : (sy1 + sy2) / 2
+        const angle = Math.atan2(sy2 - sy1, sx2 - sx1)
         drawLabel(ctx, shape.label, lx - Math.sin(angle) * 12, ly + Math.cos(angle) * 12, shape.style)
+      }
+
+      // Attachment indicator dots (small green circles at attached ports)
+      if (shape.startAttach || shape.endAttach) {
+        ctx.save()
+        ctx.setLineDash([])
+        if (shape.startAttach) {
+          ctx.beginPath()
+          ctx.arc(sx1, sy1, 4, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(34,197,94,0.8)'
+          ctx.fill()
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+        }
+        if (shape.endAttach) {
+          ctx.beginPath()
+          ctx.arc(sx2, sy2, 4, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(34,197,94,0.8)'
+          ctx.fill()
+          ctx.strokeStyle = '#fff'
+          ctx.lineWidth = 1.5
+          ctx.stroke()
+        }
+        ctx.restore()
       }
 
       // Control-point handle (selected curved connector)
@@ -285,9 +490,9 @@ export function renderShape(
         ctx.lineWidth = 1 / (dragOffset ? 1 : 1)
         ctx.setLineDash([4, 3])
         ctx.beginPath()
-        ctx.moveTo(shape.x1, shape.y1)
+        ctx.moveTo(sx1, sy1)
         ctx.lineTo(shape.cx!, shape.cy!)
-        ctx.lineTo(shape.x2, shape.y2)
+        ctx.lineTo(sx2, sy2)
         ctx.stroke()
         // Handle dot
         ctx.setLineDash([])
@@ -329,7 +534,7 @@ export function renderShape(
       ctx.strokeRect(x, y, w, h)
 
       // Draw resize handles only on box shapes
-      const isBox = ['rect', 'roundrect', 'diamond', 'ellipse', 'parallelogram'].includes(shape.type)
+      const isBox = ['rect', 'roundrect', 'diamond', 'ellipse', 'parallelogram', 'star', 'triangle', 'hexagon'].includes(shape.type)
       if (isBox) {
         ctx.setLineDash([])
         for (const [hx, hy] of getHandlePositions(bb)) {
@@ -427,6 +632,9 @@ export function buildPreview(
     case 'diamond':      return { id, type: 'diamond',      x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
     case 'ellipse':      return { id, type: 'ellipse',      x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
     case 'parallelogram':return { id, type: 'parallelogram',x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
+    case 'star':         return { id, type: 'star',         x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
+    case 'triangle':     return { id, type: 'triangle',     x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
+    case 'hexagon':      return { id, type: 'hexagon',      x: x0, y: y0, w: x1-x0, h: y1-y0, label: '', style }
     case 'arrow':        return { id, type: 'arrow',        x1: x0, y1: y0, x2: x1, y2: y1, cx, cy, label: '', style }
     case 'dashed-arrow': return { id, type: 'dashed-arrow', x1: x0, y1: y0, x2: x1, y2: y1, cx, cy, label: '', style }
     case 'line':         return { id, type: 'line',         x1: x0, y1: y0, x2: x1, y2: y1, cx, cy, label: '', style }

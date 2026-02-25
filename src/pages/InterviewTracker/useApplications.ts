@@ -1,5 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useLocalStorage } from '../../hooks/useLocalStorage'
+import { useAuth } from '../../contexts/AuthContext'
+import { api } from '../../services/api'
 import { InterviewApplication } from '../../types/interview'
 import { generateId } from '../../utils/ids'
 import { toISODate } from '../../utils/date'
@@ -9,6 +11,38 @@ const STORAGE_KEY = 'myservices_applications'
 
 export function useApplications() {
   const [applications, setApplications] = useLocalStorage<InterviewApplication[]>(STORAGE_KEY, [])
+  const { isAuthenticated } = useAuth()
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Sync from server on mount when authenticated
+  useEffect(() => {
+    if (!isAuthenticated) return
+    let cancelled = false
+    api.getApplications()
+      .then((res: { applications: InterviewApplication[] }) => {
+        if (cancelled || !Array.isArray(res.applications) || res.applications.length === 0) return
+        setApplications(prev => {
+          const merged: InterviewApplication[] = [...res.applications]
+          const seenIds = new Set(res.applications.map(a => a.id))
+          for (const a of prev) {
+            if (!seenIds.has(a.id)) merged.push(a)
+          }
+          return merged
+        })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAuthenticated]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounced sync to server
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
+    syncTimerRef.current = setTimeout(() => {
+      api.syncApplications(applications).catch(() => {})
+    }, 1500)
+    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current) }
+  }, [applications, isAuthenticated])
 
   const addApplication = useCallback(
     (data: Omit<InterviewApplication, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -41,8 +75,11 @@ export function useApplications() {
   const deleteApplication = useCallback(
     (id: string) => {
       setApplications((prev) => prev.filter((a) => a.id !== id))
+      if (isAuthenticated) {
+        api.deleteApplication(id).catch(() => {})
+      }
     },
-    [setApplications]
+    [setApplications, isAuthenticated]
   )
 
   const exportExcel = useCallback(() => {

@@ -12,11 +12,12 @@ export default function PDFEditor() {
     pdfDoc, fileName, numPages, scale, setScale, annotations,
     activeTool, setActiveTool, toolOptions, setToolOptions,
     loading, error, loadPDF,
-    addHighlight, addText, addSignature, addDraw, addShape, addWhiteout, addStamp,
+    addHighlight, addText, addSignature, addDraw, addShape, addWhiteout, addStamp, addStickyNote, addUnderline, addStrikethrough, addPolygon, addCallout,
     updateAnnotation, removeAnnotation, startDragHistory,
     canUndo, canRedo, undo, redo,
     setPageDims, originalBytesRef, pageDimsRef, reset,
     currentPage, setCurrentPage,
+    pageOperations, rotatePage, deletePage, movePage,
   } = usePDFEditor()
 
   // Keyboard shortcuts for undo/redo
@@ -70,7 +71,7 @@ export default function PDFEditor() {
     setDlError(null)
     try {
       const scales = pageDimsRef.current.map((d) => d?.scale ?? 1.2)
-      const bytes = await embedAnnotations(originalBytesRef.current, annotations, scales)
+      const bytes = await embedAnnotations(originalBytesRef.current, annotations, scales, pageOperations)
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -142,6 +143,9 @@ export default function PDFEditor() {
         onDownload={handleDownload}
         onReset={reset}
         downloading={downloading}
+        onRotatePage={rotatePage}
+        onDeletePage={deletePage}
+        onMovePage={movePage}
       />
       {dlError && (
         <div className="bg-red-950/40 border-b border-red-800/60 text-red-400 text-xs px-4 py-1">
@@ -161,6 +165,11 @@ export default function PDFEditor() {
         onAddShape={addShape}
         onAddWhiteout={addWhiteout}
         onAddStamp={addStamp}
+        onAddStickyNote={addStickyNote}
+        onAddUnderline={addUnderline}
+        onAddStrikethrough={addStrikethrough}
+        onAddPolygon={addPolygon}
+        onAddCallout={addCallout}
         onUpdateAnnotation={updateAnnotation}
         onRemoveAnnotation={removeAnnotation}
         onRequestSignature={handleRequestSignature}

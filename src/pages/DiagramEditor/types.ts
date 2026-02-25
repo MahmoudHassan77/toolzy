@@ -16,6 +16,9 @@ export type Tool =
   | 'diamond'       // decision node
   | 'ellipse'       // use-case bubble, state
   | 'parallelogram' // I/O node
+  | 'star'          // 5-point star shape
+  | 'triangle'      // equilateral triangle (pointing up)
+  | 'hexagon'       // regular hexagon
   | 'arrow'         // association (filled head)
   | 'dashed-arrow'  // dependency / realization
   | 'line'          // undirected link
@@ -41,13 +44,20 @@ export interface PenShape {
 
 export interface BoxShape {
   id: string
-  type: 'rect' | 'roundrect' | 'diamond' | 'ellipse' | 'parallelogram'
+  type: 'rect' | 'roundrect' | 'diamond' | 'ellipse' | 'parallelogram' | 'star' | 'triangle' | 'hexagon'
   x: number
   y: number
   w: number
   h: number
   label: string
   style: Style
+}
+
+export type PortSide = 'top' | 'right' | 'bottom' | 'left'
+
+export interface PortAttach {
+  shapeId: string
+  port: PortSide
 }
 
 export interface ConnShape {
@@ -59,6 +69,8 @@ export interface ConnShape {
   y2: number
   cx?: number   // quadratic bezier control point (undefined = straight)
   cy?: number
+  startAttach?: PortAttach   // smart connector: start snapped to a shape port
+  endAttach?: PortAttach     // smart connector: end snapped to a shape port
   label: string
   style: Style
 }

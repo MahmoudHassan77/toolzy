@@ -1,4 +1,6 @@
+import { useState, useRef, useEffect } from 'react'
 import { Tool, Style, Background } from './types'
+import type { SavedDiagram } from './useEditor'
 
 // ── Icons ─────────────────────────────────────────────────────────────────
 
@@ -12,6 +14,9 @@ const Icons: Record<string, JSX.Element> = {
   diamond:(<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l9 9-9 9-9-9 9-9z" /></svg>),
   ellipse:(<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"><ellipse cx="12" cy="12" rx="9" ry="6" /></svg>),
   parallelogram: (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 19h12l3-14H9L6 19z" /></svg>),
+  star: (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 2l2.9 6.26L22 9.27l-5 5.14L18.18 22 12 18.56 5.82 22 7 14.41 2 9.27l7.1-1.01L12 2z" /></svg>),
+  triangle: (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 3L2 21h20L12 3z" /></svg>),
+  hexagon: (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z" /></svg>),
   arrow:  (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="5" /><polyline points="9 5 19 5 19 15" /></svg>),
   'dashed-arrow': (<svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="5" /><polyline points="9 5 19 5 19 15" strokeDasharray="none" /></svg>),
   line:   (<svg viewBox="0 0 24 24" className="w-4 h-4" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="4" /></svg>),
@@ -49,6 +54,9 @@ const GROUPS: { heading: string; tools: ToolDef[] }[] = [
       { id: 'diamond',       label: 'Diamond',       hint: 'Decision node' },
       { id: 'ellipse',       label: 'Ellipse',       hint: 'Use-case bubble · State circle' },
       { id: 'parallelogram', label: 'Parallelogram', hint: 'Input / Output node' },
+      { id: 'star',          label: 'Star',          hint: '5-point star shape' },
+      { id: 'triangle',      label: 'Triangle',      hint: 'Equilateral triangle pointing up' },
+      { id: 'hexagon',       label: 'Hexagon',       hint: 'Regular hexagon' },
     ],
   },
   {
@@ -93,15 +101,76 @@ interface Props {
   onRedo:    () => void
   onClear:   () => void
   onExport:  () => void
+  onExportSVG:  () => void
+  onExportJSON: () => void
+  onImportJSON: () => void
   onReset:   () => void
+  // Grid snapping
+  gridSnap?: boolean
+  onGridSnapChange?: (v: boolean) => void
+  // Z-order control
+  onBringToFront?: () => void
+  onSendToBack?:   () => void
+  onMoveUp?:       () => void
+  onMoveDown?:     () => void
+  // Diagram management
+  diagrams: SavedDiagram[]
+  activeDiagramId: string | null
+  onNewDiagram:    (name?: string) => void
+  onLoadDiagram:   (id: string) => void
+  onDeleteDiagram: (id: string) => void
+  onRenameDiagram: (id: string, name: string) => void
 }
 
 export default function ToolBar({
   tool, style, background, canUndo, canRedo,
   selectedShapeType,
   onToolChange, onStyleChange, onBackgroundChange,
-  onUndo, onRedo, onClear, onExport, onReset,
+  onUndo, onRedo, onClear, onExport, onExportSVG, onExportJSON, onImportJSON, onReset,
+  gridSnap = false, onGridSnapChange,
+  onBringToFront, onSendToBack, onMoveUp, onMoveDown,
+  diagrams, activeDiagramId,
+  onNewDiagram, onLoadDiagram, onDeleteDiagram, onRenameDiagram,
 }: Props) {
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renaming])
+
+  // Close export menu on outside click
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [exportMenuOpen])
+
+  const startRename = () => {
+    const current = diagrams.find(d => d.id === activeDiagramId)
+    if (!current) return
+    setRenameValue(current.name)
+    setRenaming(true)
+  }
+
+  const commitRename = () => {
+    if (activeDiagramId && renameValue.trim()) {
+      onRenameDiagram(activeDiagramId, renameValue.trim())
+    }
+    setRenaming(false)
+  }
+
   const AB = 'bg-acc text-accon shadow-sm'
   const IB = 'text-fg2 hover:bg-raised hover:text-fg1'
   const btn = (active: boolean) =>
@@ -120,10 +189,81 @@ export default function ToolBar({
   const isText = activeType === 'text'
   const hint = GROUPS.flatMap(g => g.tools).find(t => t.id === tool)?.hint
 
+  const smallBtn = 'px-2 py-0.5 text-xs rounded border border-line text-fg2 hover:bg-raised hover:text-fg1 transition-colors font-medium'
+
   return (
     <div className="bg-surface border-b border-line shrink-0 select-none">
+      {/* ── Diagram picker bar ─────────────────────────────────────── */}
+      <div className="px-3 py-1 flex items-center gap-2 border-b border-line bg-surface min-h-[34px]">
+        <span className="text-[10px] uppercase tracking-wide text-fg3 font-semibold shrink-0">Diagram</span>
+
+        {renaming ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={e => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') setRenaming(false)
+            }}
+            className="px-1.5 py-0.5 text-xs rounded border border-acc bg-surface text-fg1 outline-none w-40"
+          />
+        ) : (
+          <select
+            value={activeDiagramId ?? ''}
+            onChange={e => {
+              if (e.target.value) onLoadDiagram(e.target.value)
+            }}
+            className="px-1.5 py-0.5 text-xs rounded border border-line bg-surface text-fg1 outline-none max-w-[200px] truncate cursor-pointer"
+          >
+            {diagrams.length === 0 && (
+              <option value="" disabled>No diagrams</option>
+            )}
+            {diagrams.map(d => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
+
+        <button
+          onClick={() => onNewDiagram()}
+          title="New diagram"
+          className={smallBtn}
+        >
+          + New
+        </button>
+
+        {activeDiagramId && !renaming && (
+          <>
+            <button
+              onClick={startRename}
+              title="Rename current diagram"
+              className={smallBtn}
+            >
+              Rename
+            </button>
+            <button
+              onClick={() => {
+                const current = diagrams.find(d => d.id === activeDiagramId)
+                if (current && confirm(`Delete "${current.name}"?`)) {
+                  onDeleteDiagram(activeDiagramId)
+                }
+              }}
+              title="Delete current diagram"
+              className={`${smallBtn} hover:!text-red-500 hover:!border-red-400`}
+            >
+              Delete
+            </button>
+          </>
+        )}
+
+        <span className="text-[10px] text-fg3 ml-auto hidden sm:block">
+          {diagrams.length} diagram{diagrams.length !== 1 ? 's' : ''} saved
+        </span>
+      </div>
       {/* ── Row 1: tools + actions ───────────────────────────────── */}
-      <div className="px-3 py-1.5 flex items-center gap-1 flex-wrap min-h-[46px] overflow-x-auto">
+      <div className="px-3 py-1.5 flex items-center gap-1 flex-wrap min-h-[46px]">
         {GROUPS.map((group, gi) => (
           <div key={group.heading} className="flex items-center gap-0.5">
             {gi > 0 && <div className="w-px h-6 bg-line mx-1 shrink-0" />}
@@ -175,6 +315,81 @@ export default function ToolBar({
           </button>
         ))}
 
+        {/* Grid snap toggle */}
+        {onGridSnapChange && (
+          <>
+            <div className="w-px h-6 bg-line mx-1 shrink-0" />
+            <button
+              onClick={() => onGridSnapChange(!gridSnap)}
+              title={gridSnap ? 'Snap to grid: ON — click to disable' : 'Snap to grid: OFF — click to enable'}
+              className={`flex items-center justify-center w-8 h-8 rounded transition-colors ${gridSnap ? AB : IB}`}
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M3 3v18h18" />
+                <path d="M9 3v18" />
+                <path d="M15 3v18" />
+                <path d="M3 9h18" />
+                <path d="M3 15h18" />
+                <path d="M21 3v18" />
+              </svg>
+            </button>
+          </>
+        )}
+
+        {/* Z-order controls (visible when a shape is selected) */}
+        {selectedShapeType && (onBringToFront || onSendToBack || onMoveUp || onMoveDown) && (
+          <>
+            <div className="w-px h-6 bg-line mx-1 shrink-0" />
+            <span className="text-[10px] uppercase tracking-wide text-fg3 font-semibold shrink-0 hidden sm:block">Order</span>
+            {onSendToBack && (
+              <button
+                onClick={onSendToBack}
+                title="Send to back"
+                className={btn(false)}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="7 13 12 18 17 13" />
+                  <polyline points="7 6 12 11 17 6" />
+                </svg>
+              </button>
+            )}
+            {onMoveDown && (
+              <button
+                onClick={onMoveDown}
+                title="Move down one layer"
+                className={btn(false)}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+            )}
+            {onMoveUp && (
+              <button
+                onClick={onMoveUp}
+                title="Move up one layer"
+                className={btn(false)}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="18 15 12 9 6 15" />
+                </svg>
+              </button>
+            )}
+            {onBringToFront && (
+              <button
+                onClick={onBringToFront}
+                title="Bring to front"
+                className={btn(false)}
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="17 11 12 6 7 11" />
+                  <polyline points="17 18 12 13 7 18" />
+                </svg>
+              </button>
+            )}
+          </>
+        )}
+
         <div className="flex-1" />
 
         {/* Clear */}
@@ -183,12 +398,53 @@ export default function ToolBar({
           {Icons.trash}
         </button>
 
-        {/* Export PNG */}
-        <button onClick={onExport} title="Export as PNG"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-acc text-accon hover:opacity-90 transition-opacity shrink-0">
-          {Icons.export}
-          <span className="hidden sm:inline">PNG</span>
+        {/* Import JSON */}
+        <button onClick={onImportJSON} title="Import diagram from JSON"
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded border border-line text-fg2 hover:bg-raised hover:text-fg1 transition-colors shrink-0">
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <span className="hidden sm:inline">Import</span>
         </button>
+
+        {/* Export dropdown */}
+        <div className="relative shrink-0" ref={exportMenuRef}>
+          <button
+            onClick={() => setExportMenuOpen(v => !v)}
+            title="Export diagram"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-acc text-accon hover:opacity-90 transition-opacity"
+          >
+            {Icons.export}
+            <span className="hidden sm:inline">Export</span>
+            <svg viewBox="0 0 12 12" className="w-2.5 h-2.5 ml-0.5" fill="currentColor">
+              <path d="M2 4l4 4 4-4" />
+            </svg>
+          </button>
+          {exportMenuOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-surface border border-line rounded shadow-lg z-50 min-w-[120px] py-1">
+              <button
+                onClick={() => { onExport(); setExportMenuOpen(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs font-medium text-fg1 hover:bg-raised transition-colors"
+              >
+                PNG Image
+              </button>
+              <button
+                onClick={() => { onExportSVG(); setExportMenuOpen(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs font-medium text-fg1 hover:bg-raised transition-colors"
+              >
+                SVG Vector
+              </button>
+              <button
+                onClick={() => { onExportJSON(); setExportMenuOpen(false) }}
+                className="w-full text-left px-3 py-1.5 text-xs font-medium text-fg1 hover:bg-raised transition-colors"
+              >
+                JSON Data
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Row 2: style options (contextual) ────────────────────── */}

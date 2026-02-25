@@ -1,10 +1,12 @@
 import { useEffect } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import { useAuth } from '../../contexts/AuthContext'
 
 interface NavItem {
   to: string
   label: string
   icon: React.ReactNode
+  premium?: boolean
 }
 
 interface NavSection {
@@ -17,12 +19,18 @@ interface SidebarProps {
   onClose: () => void
 }
 
+const LockIcon = () => (
+  <svg className="w-3 h-3 text-fg3 ml-auto shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+  </svg>
+)
+
 const navSections: NavSection[] = [
   {
     heading: null,
     items: [
       {
-        to: '/',
+        to: '/dashboard',
         label: 'Home',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -37,8 +45,9 @@ const navSections: NavSection[] = [
     heading: 'Documents & PDF',
     items: [
       {
-        to: '/browser',
+        to: '/dashboard/browser',
         label: 'Interview Browser',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -47,8 +56,9 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/tracker',
+        to: '/dashboard/tracker',
         label: 'Interview Tracker',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -57,8 +67,9 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/pdf-editor',
+        to: '/dashboard/pdf-editor',
         label: 'PDF Editor',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -67,8 +78,9 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/pdf-to-word',
+        to: '/dashboard/pdf-to-word',
         label: 'PDF to Word',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -82,7 +94,7 @@ const navSections: NavSection[] = [
     heading: 'Text & Code',
     items: [
       {
-        to: '/md-editor',
+        to: '/dashboard/md-editor',
         label: 'Markdown Editor',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -92,7 +104,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/json',
+        to: '/dashboard/json',
         label: 'JSON Formatter',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -102,7 +114,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/diff',
+        to: '/dashboard/diff',
         label: 'Diff Viewer',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -112,7 +124,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/encoder',
+        to: '/dashboard/encoder',
         label: 'Base64 / URL',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -122,7 +134,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/regex',
+        to: '/dashboard/regex',
         label: 'Regex Tester',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -137,7 +149,7 @@ const navSections: NavSection[] = [
     heading: 'Productivity',
     items: [
       {
-        to: '/pomodoro',
+        to: '/dashboard/pomodoro',
         label: 'Pomodoro Timer',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -147,7 +159,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/notes',
+        to: '/dashboard/notes',
         label: 'Notes',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -157,12 +169,34 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/todo',
+        to: '/dashboard/todo',
         label: 'Todo List',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
               d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 7h3m-3 4h3m2-4h.01M16 16h.01" />
+          </svg>
+        ),
+      },
+      {
+        to: '/dashboard/storyboard',
+        label: 'Story Board',
+        premium: true,
+        icon: (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+        ),
+      },
+      {
+        to: '/dashboard/calendar',
+        label: 'Calendar',
+        premium: true,
+        icon: (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
         ),
       },
@@ -172,8 +206,9 @@ const navSections: NavSection[] = [
     heading: 'Developer Tools',
     items: [
       {
-        to: '/diagram',
+        to: '/dashboard/diagram',
         label: 'Diagram Editor',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -182,8 +217,9 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/project-mapper',
+        to: '/dashboard/project-mapper',
         label: 'Project File Map',
+        premium: true,
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -197,7 +233,7 @@ const navSections: NavSection[] = [
     heading: 'Media & Visual',
     items: [
       {
-        to: '/image-compressor',
+        to: '/dashboard/image-compressor',
         label: 'Image Compressor',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -207,7 +243,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/csv',
+        to: '/dashboard/csv',
         label: 'CSV Viewer',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -217,7 +253,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/qr',
+        to: '/dashboard/qr',
         label: 'QR Code',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -227,7 +263,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/colors',
+        to: '/dashboard/colors',
         label: 'Color Palette',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -237,7 +273,7 @@ const navSections: NavSection[] = [
         ),
       },
       {
-        to: '/base64-image',
+        to: '/dashboard/base64-image',
         label: 'Base64 to Image',
         icon: (
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -252,6 +288,7 @@ const navSections: NavSection[] = [
 
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const { pathname } = useLocation()
+  const { isAuthenticated } = useAuth()
 
   // Close sidebar on navigation (mobile)
   useEffect(() => {
@@ -293,7 +330,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 <li key={item.to}>
                   <NavLink
                     to={item.to}
-                    end={item.to === '/'}
+                    end={item.to === '/dashboard'}
                     className={({ isActive }) =>
                       `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors
                        ${isActive
@@ -304,6 +341,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                   >
                     {item.icon}
                     {item.label}
+                    {item.premium && !isAuthenticated && <LockIcon />}
                   </NavLink>
                 </li>
               ))}
