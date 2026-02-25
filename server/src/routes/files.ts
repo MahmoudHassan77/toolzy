@@ -2,19 +2,24 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { getDatabase } from '../db.js';
 import { authMiddleware } from '../auth.js';
 import multer from 'multer';
-import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Use /tmp on serverless (Vercel), otherwise project-local uploads dir
+const IS_SERVERLESS = !!process.env.VERCEL;
+const UPLOADS_DIR = IS_SERVERLESS
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(process.cwd(), 'uploads');
 
-const UPLOADS_DIR = path.join(__dirname, '..', '..', '..', 'uploads');
-
-// Ensure uploads directory exists
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+// Ensure uploads directory exists (safe on both local and /tmp)
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch {
+  // read-only filesystem — uploads won't work but other routes should
 }
 
 // Configure multer storage
