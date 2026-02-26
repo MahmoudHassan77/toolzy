@@ -87,6 +87,13 @@ export const api = {
   deleteApplication: (id: string) =>
     apiFetch(`/api/applications/${id}`, { method: 'DELETE' }),
 
+  // Links (Link Vault)
+  getLinks: () => apiFetch('/api/links'),
+  syncLinks: (links: unknown[]) =>
+    apiFetch('/api/links/sync', { method: 'POST', body: JSON.stringify({ links }) }),
+  deleteLink: (id: string) =>
+    apiFetch(`/api/links/${id}`, { method: 'DELETE' }),
+
   // Files
   uploadFile: async (file: File) => {
     const token = localStorage.getItem('myservices_token')

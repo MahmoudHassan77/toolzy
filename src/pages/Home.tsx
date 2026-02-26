@@ -160,6 +160,18 @@ const sections: Section[] = [
         ),
       },
       {
+        to: '/dashboard/links',
+        title: 'Link Vault',
+        description: 'Save and organize bookmarks by category with tags, search, and filter.',
+        color: 'from-blue-500 to-cyan-600',
+        icon: (
+          <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
+        ),
+      },
+      {
         to: '/dashboard/storyboard',
         title: 'Story Board',
         description: 'Kanban board with drag-and-drop cards, priorities, tags, due dates, and multiple boards. Persists locally.',
