@@ -39,10 +39,23 @@ export default async function (req: VercelRequest, res: VercelResponse) {
       const hash = bcrypt.hashSync('demo123', 10);
       await users.insertOne({
         _id: 'demo-user-00000000' as any,
-        email: 'demo@demo.com', password_hash: hash, name: 'Demo User',
+        email: 'demo@demo.com', password_hash: hash, name: 'Demo User', role: 'user',
         provider: 'email', provider_id: null, avatar_url: null,
         created_at: new Date().toISOString(),
       });
+    }
+
+    // Seed admin user
+    const adminUser = await users.findOne({ email: 'admin@toolzy.com' });
+    if (!adminUser) {
+      const adminHash = bcrypt.hashSync('P@$$w0rd', 10);
+      await users.insertOne({
+        _id: 'admin-user-00000000' as any,
+        email: 'admin@toolzy.com', password_hash: adminHash, name: 'Admin', role: 'admin',
+        provider: 'email', provider_id: null, avatar_url: null,
+        created_at: new Date().toISOString(),
+      });
+      console.log('[DB] Admin user created');
     }
     console.log('[DB] Connected to MongoDB Atlas');
 
@@ -85,8 +98,8 @@ export default async function (req: VercelRequest, res: VercelResponse) {
         const existing = await users.findOne({ email });
         if (existing) { res.status(409).json({ message: 'An account with this email already exists.' }); return; }
         const id = uuidv4(); const pwHash = await hashPassword(password); const createdAt = new Date().toISOString();
-        await users.insertOne({ _id: id as any, email, password_hash: pwHash, name: name.trim(), provider: 'email', provider_id: null, avatar_url: null, created_at: createdAt });
-        res.status(201).json({ token: generateToken(id), user: { id, email, name: name.trim(), avatar_url: null, created_at: createdAt } });
+        await users.insertOne({ _id: id as any, email, password_hash: pwHash, name: name.trim(), role: 'user', provider: 'email', provider_id: null, avatar_url: null, created_at: createdAt });
+        res.status(201).json({ token: generateToken(id), user: { id, email, name: name.trim(), role: 'user', avatar_url: null, created_at: createdAt } });
       } catch (e) { console.error('[Auth] Register error:', e); res.status(500).json({ message: 'Internal server error.' }); }
     });
 
@@ -98,7 +111,7 @@ export default async function (req: VercelRequest, res: VercelResponse) {
         if (!user) { res.status(401).json({ message: 'Invalid email or password.' }); return; }
         const valid = await verifyPassword(password, user.password_hash);
         if (!valid) { res.status(401).json({ message: 'Invalid email or password.' }); return; }
-        res.json({ token: generateToken(String(user._id)), user: { id: String(user._id), email: user.email, name: user.name, avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
+        res.json({ token: generateToken(String(user._id)), user: { id: String(user._id), email: user.email, name: user.name, role: user.role || 'user', avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
       } catch (e) { console.error('[Auth] Login error:', e); res.status(500).json({ message: 'Internal server error.' }); }
     });
 
@@ -106,7 +119,7 @@ export default async function (req: VercelRequest, res: VercelResponse) {
       try {
         const user = await users.findOne({ _id: req.userId as any }, { projection: { password_hash: 0, provider_id: 0 } });
         if (!user) { res.status(404).json({ message: 'User not found.' }); return; }
-        res.json({ user: { id: user._id, email: user.email, name: user.name, avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
+        res.json({ user: { id: user._id, email: user.email, name: user.name, role: user.role || 'user', avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
       } catch (e) { console.error('[Auth] Me error:', e); res.status(500).json({ message: 'Internal server error.' }); }
     });
 
@@ -465,6 +478,108 @@ export default async function (req: VercelRequest, res: VercelResponse) {
       } catch (e) { console.error('[Files] Get error:', e); res.status(500).json({ message: 'Internal server error.' }); }
     });
     app.use('/api/files', filesR);
+
+    // --- Admin Routes ---
+    const ADMIN_COLLECTIONS = ['notes', 'todos', 'boards', 'diagrams', 'calendar_events', 'links', 'applications', 'files'];
+    function adminMiddleware(req: any, res: any, next: any) {
+      // Runs after authMiddleware
+      users.findOne({ _id: req.userId as any }).then((user: any) => {
+        if (!user || user.role !== 'admin') { res.status(403).json({ message: 'Admin access required.' }); return; }
+        next();
+      }).catch(() => { res.status(500).json({ message: 'Internal server error.' }); });
+    }
+    const adminR = express.Router(); adminR.use(authMiddleware, adminMiddleware);
+
+    adminR.get('/stats', async (_req: any, res: any) => {
+      try {
+        const [usersCount, notesCount, todosCount, boardsCount, diagramsCount, calEventsCount, linksCount, appsCount] = await Promise.all([
+          db.collection('users').countDocuments(), db.collection('notes').countDocuments(), db.collection('todos').countDocuments(),
+          db.collection('boards').countDocuments(), db.collection('diagrams').countDocuments(), db.collection('calendar_events').countDocuments(),
+          db.collection('links').countDocuments(), db.collection('applications').countDocuments(),
+        ]);
+        res.json({ stats: { users: usersCount, notes: notesCount, todos: todosCount, boards: boardsCount, diagrams: diagramsCount, calendarEvents: calEventsCount, links: linksCount, applications: appsCount } });
+      } catch (e) { console.error('[Admin] Stats error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.get('/users', async (req: any, res: any) => {
+      try {
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+        const search = (req.query.search || '').trim();
+        const filter: any = {};
+        if (search) { filter.$or = [{ name: { $regex: search, $options: 'i' } }, { email: { $regex: search, $options: 'i' } }]; }
+        const [total, docs] = await Promise.all([
+          db.collection('users').countDocuments(filter),
+          db.collection('users').find(filter, { projection: { password_hash: 0, provider_id: 0 } }).sort({ created_at: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+        ]);
+        const userList = docs.map((u: any) => ({ id: String(u._id), email: u.email, name: u.name, role: u.role || 'user', provider: u.provider, avatar_url: u.avatar_url ?? null, disabled: u.disabled ?? false, created_at: u.created_at }));
+        res.json({ users: userList, total, page, limit, totalPages: Math.ceil(total / limit) });
+      } catch (e) { console.error('[Admin] List users error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.get('/users/:id', async (req: any, res: any) => {
+      try {
+        const user = await db.collection('users').findOne({ _id: req.params.id as any }, { projection: { password_hash: 0, provider_id: 0 } });
+        if (!user) { res.status(404).json({ message: 'User not found.' }); return; }
+        const userId = String(user._id);
+        const counts = await Promise.all(ADMIN_COLLECTIONS.map(c => db.collection(c).countDocuments({ user_id: userId })));
+        const contentCounts: any = {}; ADMIN_COLLECTIONS.forEach((c, i) => { contentCounts[c] = counts[i]; });
+        res.json({ user: { id: userId, email: user.email, name: user.name, role: user.role || 'user', provider: user.provider, avatar_url: user.avatar_url ?? null, disabled: user.disabled ?? false, created_at: user.created_at }, contentCounts });
+      } catch (e) { console.error('[Admin] Get user error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.put('/users/:id', async (req: any, res: any) => {
+      try {
+        const user = await users.findOne({ _id: req.params.id as any });
+        if (!user) { res.status(404).json({ message: 'User not found.' }); return; }
+        const { role, name, disabled } = req.body;
+        const update: any = {};
+        if (role !== undefined && (role === 'admin' || role === 'user')) update.role = role;
+        if (name !== undefined && typeof name === 'string' && name.trim()) update.name = name.trim();
+        if (disabled !== undefined && typeof disabled === 'boolean') update.disabled = disabled;
+        if (Object.keys(update).length > 0) { await users.updateOne({ _id: req.params.id as any }, { $set: update }); }
+        const updated = await users.findOne({ _id: req.params.id as any }, { projection: { password_hash: 0, provider_id: 0 } });
+        res.json({ user: { id: String(updated._id), email: updated.email, name: updated.name, role: updated.role || 'user', provider: updated.provider, avatar_url: updated.avatar_url ?? null, disabled: updated.disabled ?? false, created_at: updated.created_at } });
+      } catch (e) { console.error('[Admin] Update user error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.delete('/users/:id', async (req: any, res: any) => {
+      try {
+        const userId = req.params.id;
+        if (userId === req.userId) { res.status(400).json({ message: 'Cannot delete your own account.' }); return; }
+        const user = await users.findOne({ _id: userId as any });
+        if (!user) { res.status(404).json({ message: 'User not found.' }); return; }
+        await Promise.all(ADMIN_COLLECTIONS.map(c => db.collection(c).deleteMany({ user_id: userId })));
+        await users.deleteOne({ _id: userId as any });
+        res.json({ message: 'User and all content deleted.' });
+      } catch (e) { console.error('[Admin] Delete user error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.get('/users/:id/content', async (req: any, res: any) => {
+      try {
+        const userId = req.params.id;
+        const user = await users.findOne({ _id: userId as any });
+        if (!user) { res.status(404).json({ message: 'User not found.' }); return; }
+        const results = await Promise.all(ADMIN_COLLECTIONS.map(async (c) => {
+          const docs = await db.collection(c).find({ user_id: userId }).sort({ created_at: -1 }).limit(100).toArray();
+          return [c, docs.map((d: any) => ({ id: String(d._id), ...d, _id: undefined }))] as const;
+        }));
+        const content: any = {}; results.forEach(([key, docs]) => { content[key] = docs; });
+        res.json({ content });
+      } catch (e) { console.error('[Admin] User content error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    adminR.delete('/users/:id/content/:collection/:itemId', async (req: any, res: any) => {
+      try {
+        const { id: userId, collection, itemId } = req.params;
+        if (!ADMIN_COLLECTIONS.includes(collection)) { res.status(400).json({ message: 'Invalid collection.' }); return; }
+        const result = await db.collection(collection).deleteOne({ _id: itemId as any, user_id: userId });
+        if (result.deletedCount === 0) { res.status(404).json({ message: 'Content item not found.' }); return; }
+        res.json({ message: 'Content item deleted.' });
+      } catch (e) { console.error('[Admin] Delete content error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+
+    app.use('/api/admin', adminR);
 
     // --- Health & fallbacks ---
     app.get('/api/health', (_req: any, res: any) => { res.json({ status: 'ok', timestamp: new Date().toISOString() }); });

@@ -65,6 +65,7 @@ router.post('/register', async (req: Request<object, object, RegisterBody>, res:
       email,
       password_hash: passwordHash,
       name: name.trim(),
+      role: 'user',
       provider: 'email',
       provider_id: null,
       avatar_url: null,
@@ -76,7 +77,7 @@ router.post('/register', async (req: Request<object, object, RegisterBody>, res:
 
     res.status(201).json({
       token,
-      user: { id, email, name: name.trim(), avatar_url: null, created_at: createdAt },
+      user: { id, email, name: name.trim(), role: 'user', avatar_url: null, created_at: createdAt },
     });
   } catch (error) {
     console.error('[Auth] Register error:', error);
@@ -116,7 +117,7 @@ router.post('/login', async (req: Request<object, object, LoginBody>, res: Respo
 
     res.json({
       token,
-      user: { id: String(user._id), email: user.email, name: user.name, avatar_url: user.avatar_url ?? null, created_at: user.created_at },
+      user: { id: String(user._id), email: user.email, name: user.name, role: user.role || 'user', avatar_url: user.avatar_url ?? null, created_at: user.created_at },
     });
   } catch (error) {
     console.error('[Auth] Login error:', error);
@@ -142,7 +143,7 @@ router.get('/me', authMiddleware, async (req: Request, res: Response): Promise<v
       return;
     }
 
-    res.json({ user: { id: user._id, email: user.email, name: user.name, avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
+    res.json({ user: { id: user._id, email: user.email, name: user.name, role: user.role || 'user', avatar_url: user.avatar_url ?? null, created_at: user.created_at } });
   } catch (error) {
     console.error('[Auth] Me error:', error);
     res.status(500).json({ message: 'Internal server error.' });

@@ -114,4 +114,23 @@ export const api = {
     const token = localStorage.getItem('myservices_token')
     return `${API_BASE}/api/files/${id}/download${token ? `?token=${token}` : ''}`
   },
+
+  // Admin
+  adminGetStats: () => apiFetch('/api/admin/stats'),
+  adminGetUsers: (params?: { page?: number; limit?: number; search?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.page) q.set('page', String(params.page))
+    if (params?.limit) q.set('limit', String(params.limit))
+    if (params?.search) q.set('search', params.search)
+    const qs = q.toString()
+    return apiFetch(`/api/admin/users${qs ? `?${qs}` : ''}`)
+  },
+  adminGetUser: (id: string) => apiFetch(`/api/admin/users/${id}`),
+  adminUpdateUser: (id: string, data: { role?: string; name?: string; disabled?: boolean }) =>
+    apiFetch(`/api/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  adminDeleteUser: (id: string) =>
+    apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' }),
+  adminGetUserContent: (id: string) => apiFetch(`/api/admin/users/${id}/content`),
+  adminDeleteContent: (userId: string, collection: string, itemId: string) =>
+    apiFetch(`/api/admin/users/${userId}/content/${collection}/${itemId}`, { method: 'DELETE' }),
 }

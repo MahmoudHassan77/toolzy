@@ -39,12 +39,31 @@ export async function initDatabase(): Promise<void> {
         email: 'demo@demo.com',
         password_hash: hash,
         name: 'Demo User',
+        role: 'user',
         provider: 'email',
         provider_id: null,
         avatar_url: null,
         created_at: new Date().toISOString(),
       });
       console.log('[DB] Demo user created (email: demo@demo.com, password: demo123)');
+    }
+
+    // Seed admin user if not exists
+    const adminUser = await users.findOne({ email: 'admin@toolzy.com' });
+    if (!adminUser) {
+      const adminHash = bcrypt.hashSync('P@$$w0rd', 10);
+      await users.insertOne({
+        _id: 'admin-user-00000000' as any,
+        email: 'admin@toolzy.com',
+        password_hash: adminHash,
+        name: 'Admin',
+        role: 'admin',
+        provider: 'email',
+        provider_id: null,
+        avatar_url: null,
+        created_at: new Date().toISOString(),
+      });
+      console.log('[DB] Admin user created (email: admin@toolzy.com)');
     }
 
     console.log('[DB] Connected to MongoDB Atlas');

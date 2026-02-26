@@ -28,6 +28,8 @@ import DiagramEditor from './pages/DiagramEditor'
 import StoryBoard from './pages/StoryBoard'
 import Calendar from './pages/Calendar'
 import LinkVault from './pages/LinkVault'
+import AdminRoute from './components/AdminRoute'
+import Admin from './pages/Admin'
 import ErrorBoundary from './components/ErrorBoundary'
 
 function Premium({ children }: { children: React.ReactNode }) {
@@ -67,6 +69,9 @@ export default function App() {
           <Route path="image-compressor" element={<Free><ImageCompressor /></Free>} />
           <Route path="md-editor" element={<Free><MdEditor /></Free>} />
           <Route path="links" element={<Free><LinkVault /></Free>} />
+
+          {/* Admin */}
+          <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
 
           {/* Premium tools — require auth */}
           <Route path="pdf-editor" element={<Premium><PDFEditor /></Premium>} />

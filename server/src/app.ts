@@ -11,6 +11,7 @@ import todoRoutes from './routes/todos.js';
 import calendarRoutes from './routes/calendar.js';
 import applicationRoutes from './routes/applications.js';
 import linkRoutes from './routes/links.js';
+import adminRoutes from './routes/admin.js';
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/todos', todoRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/links', linkRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
