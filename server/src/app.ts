@@ -10,6 +10,7 @@ import noteRoutes from './routes/notes.js';
 import todoRoutes from './routes/todos.js';
 import calendarRoutes from './routes/calendar.js';
 import applicationRoutes from './routes/applications.js';
+import linkRoutes from './routes/links.js';
 
 const app = express();
 
@@ -53,6 +54,7 @@ app.use('/api/notes', noteRoutes);
 app.use('/api/todos', todoRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/applications', applicationRoutes);
+app.use('/api/links', linkRoutes);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {

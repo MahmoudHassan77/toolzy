@@ -420,6 +420,40 @@ export default async function (req: VercelRequest, res: VercelResponse) {
     });
     app.use('/api/applications', appsR);
 
+    // --- Links ---
+    const linksCol = db.collection('links');
+    const linksR = express.Router(); linksR.use(authMiddleware);
+    const linkMap = (d: any) => ({ id: d._id, url: d.url, title: d.title, category: d.category, description: d.description, tags: d.tags, favicon: d.favicon, updated_at: d.updated_at, created_at: d.created_at });
+    linksR.get('/', async (req: any, res: any) => {
+      try { const docs = await linksCol.find({ user_id: req.userId }).sort({ updated_at: -1 }).toArray(); res.json({ links: docs.map(linkMap) }); }
+      catch (e) { console.error('[Links] List error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+    linksR.delete('/:id', async (req: any, res: any) => {
+      try {
+        const result = await linksCol.deleteOne({ _id: req.params.id as any, user_id: req.userId });
+        if (result.deletedCount === 0) { res.status(404).json({ message: 'Link not found.' }); return; }
+        res.json({ message: 'Link deleted.' });
+      } catch (e) { console.error('[Links] Delete error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+    linksR.post('/sync', async (req: any, res: any) => {
+      try {
+        const { links } = req.body;
+        if (!Array.isArray(links)) { res.status(400).json({ message: 'links array required.' }); return; }
+        if (links.length > 0) {
+          await linksCol.bulkWrite(links.map((l: any) => ({
+            updateOne: {
+              filter: { _id: l.id as any },
+              update: { $set: { user_id: req.userId, url: l.url, title: l.title, category: l.category, description: l.description, tags: JSON.stringify(l.tags), favicon: l.favicon, updated_at: new Date(l.updatedAt).toISOString(), created_at: new Date(l.createdAt).toISOString() } },
+              upsert: true,
+            },
+          })));
+        }
+        const docs = await linksCol.find({ user_id: req.userId }).sort({ updated_at: -1 }).toArray();
+        res.json({ links: docs.map(linkMap) });
+      } catch (e) { console.error('[Links] Sync error:', e); res.status(500).json({ message: 'Internal server error.' }); }
+    });
+    app.use('/api/links', linksR);
+
     // --- Files (metadata only on serverless — no disk uploads) ---
     const filesR = express.Router(); filesR.use(authMiddleware);
     const filesCol = db.collection('files');
