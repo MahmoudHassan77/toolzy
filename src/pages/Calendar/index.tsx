@@ -317,18 +317,36 @@ export default function Calendar() {
 
       {/* Card / Event Detail Popup */}
       {popup && (
-        <div ref={popupRef} className="fixed z-50 w-72 bg-surface border border-line rounded-xl shadow-xl p-4" style={{ left: popup.x, top: popup.y }}>
-          {popup.item.kind === 'card' ? (
-            <CardPopup card={popup.item.data} doneCardIds={doneCardIds} todayKey={todayKey} onClose={() => setPopup(null)} />
-          ) : (
-            <EventPopup
-              event={popup.item.data}
-              onClose={() => setPopup(null)}
-              onEdit={() => { const ev = popup.item.data as CalendarEvent; setPopup(null); setModal({ mode: 'edit', date: ev.date, event: ev }) }}
-              onDelete={() => { deleteEvent((popup.item.data as CalendarEvent).id); setPopup(null) }}
-            />
-          )}
-        </div>
+        <>
+          {/* Mobile: bottom sheet overlay */}
+          <div className="fixed inset-0 z-50 md:hidden bg-black/40" onClick={() => setPopup(null)}>
+            <div ref={popupRef} className="absolute bottom-0 left-0 right-0 bg-surface border-t border-line rounded-t-2xl shadow-xl p-4 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              {popup.item.kind === 'card' ? (
+                <CardPopup card={popup.item.data} doneCardIds={doneCardIds} todayKey={todayKey} onClose={() => setPopup(null)} />
+              ) : (
+                <EventPopup
+                  event={popup.item.data}
+                  onClose={() => setPopup(null)}
+                  onEdit={() => { const ev = popup.item.data as CalendarEvent; setPopup(null); setModal({ mode: 'edit', date: ev.date, event: ev }) }}
+                  onDelete={() => { deleteEvent((popup.item.data as CalendarEvent).id); setPopup(null) }}
+                />
+              )}
+            </div>
+          </div>
+          {/* Desktop: positioned popup */}
+          <div ref={popupRef} className="fixed z-50 w-72 bg-surface border border-line rounded-xl shadow-xl p-4 hidden md:block" style={{ left: popup.x, top: popup.y }}>
+            {popup.item.kind === 'card' ? (
+              <CardPopup card={popup.item.data} doneCardIds={doneCardIds} todayKey={todayKey} onClose={() => setPopup(null)} />
+            ) : (
+              <EventPopup
+                event={popup.item.data}
+                onClose={() => setPopup(null)}
+                onEdit={() => { const ev = popup.item.data as CalendarEvent; setPopup(null); setModal({ mode: 'edit', date: ev.date, event: ev }) }}
+                onDelete={() => { deleteEvent((popup.item.data as CalendarEvent).id); setPopup(null) }}
+              />
+            )}
+          </div>
+        </>
       )}
 
       {/* Add / Edit Event Modal */}
@@ -506,8 +524,8 @@ function EventModal({ mode, date, event, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className="w-full max-w-sm bg-surface border border-line rounded-xl shadow-xl p-5" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 p-0 md:p-4" onClick={onClose}>
+      <div className="w-full max-w-sm bg-surface border border-line rounded-t-2xl md:rounded-xl shadow-xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-sm font-bold text-fg1 mb-4">{mode === 'add' ? 'Add Event' : 'Edit Event'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>

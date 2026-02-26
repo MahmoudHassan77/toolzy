@@ -30,6 +30,12 @@ export async function initDatabase(): Promise<void> {
       { unique: true, partialFilterExpression: { provider_id: { $exists: true, $type: 'string' } } }
     );
 
+    // Ensure content collections exist with user_id indexes
+    const contentCollections = ['notes', 'todos', 'boards', 'diagrams', 'calendar_events', 'links', 'applications', 'files'];
+    await Promise.all(
+      contentCollections.map(c => db!.collection(c).createIndex({ user_id: 1 }).catch(() => {}))
+    );
+
     // Seed demo user if not exists
     const demoUser = await users.findOne({ email: 'demo@demo.com' });
     if (!demoUser) {

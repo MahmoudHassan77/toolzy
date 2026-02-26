@@ -2,13 +2,23 @@ import { useLocalStorage } from '../../hooks/useLocalStorage'
 import { useAuth } from '../../contexts/AuthContext'
 import { api } from '../../services/api'
 import { generateId } from '../../utils/ids'
-import { useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useMemo, useCallback } from 'react'
 import type { LinkItem } from './types'
 
 export function useLinks() {
   const [links, setLinks] = useLocalStorage<LinkItem[]>('toolzy-links', [])
   const { isAuthenticated } = useAuth()
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const linksRef = useRef(links)
+  const dirtyRef = useRef(false)
+  linksRef.current = links
+
+  const flushSync = useCallback(() => {
+    if (!dirtyRef.current) return
+    dirtyRef.current = false
+    if (syncTimerRef.current) { clearTimeout(syncTimerRef.current); syncTimerRef.current = null }
+    api.syncLinks(linksRef.current).catch(() => {})
+  }, [])
 
   // Sync from server on mount when authenticated
   useEffect(() => {
@@ -44,12 +54,24 @@ export function useLinks() {
   // Debounced sync to server
   useEffect(() => {
     if (!isAuthenticated) return
+    dirtyRef.current = true
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current)
     syncTimerRef.current = setTimeout(() => {
+      dirtyRef.current = false
       api.syncLinks(links).catch(() => {})
     }, 1500)
     return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current) }
   }, [links, isAuthenticated])
+
+  // Flush pending sync on unmount or page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => flushSync()
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      flushSync()
+    }
+  }, [flushSync])
 
   const categories = useMemo(() => {
     const map = new Map<string, number>()

@@ -34,6 +34,10 @@ export default async function (req: VercelRequest, res: VercelResponse) {
       { unique: true, partialFilterExpression: { provider_id: { $exists: true, $type: 'string' } } }
     ).catch(() => {});
 
+    // Ensure content collections exist with user_id indexes
+    const contentCollections = ['notes', 'todos', 'boards', 'diagrams', 'calendar_events', 'links', 'applications', 'files'];
+    await Promise.all(contentCollections.map(c => db.collection(c).createIndex({ user_id: 1 }).catch(() => {})));
+
     const demoUser = await users.findOne({ email: 'demo@demo.com' });
     if (!demoUser) {
       const hash = bcrypt.hashSync('demo123', 10);
